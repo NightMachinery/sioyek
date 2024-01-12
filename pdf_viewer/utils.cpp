@@ -39,6 +39,8 @@
 #include <QtCore/private/qandroidextras_p.h>
 #include <qjniobject.h>
 #endif
+#include <QKeyEvent>
+#include <QtGlobal>
 
 #include <mupdf/pdf.h>
 
@@ -4185,6 +4187,84 @@ bool is_doc_valid(fz_context* ctx, std::string path) {
 
     return is_valid;
 
+bool should_trigger_delete(QKeyEvent *key_event) {
+    if (!key_event) {
+        return false;
+    }
+
+    // Check for the Delete key
+    if (key_event->key() == Qt::Key_Delete) {
+        return true;
+    }
+
+    // On macOS, treat Shift+Backspace as Delete as well
+#ifdef Q_OS_MAC
+    auto key = key_event->key();
+    bool backspace_p = (key == Qt::Key_Backspace);
+
+    bool is_control_cmd_pressed = key_event->modifiers().testFlag(Qt::ControlModifier) || key_event->modifiers().testFlag(Qt::MetaModifier);
+    // I did extensive tests on trying to detect Shift+Backspace on QT 6.6 on macOS 14. But the event for Shift+Backspace was simply not sent to us. I tested both =event->type() == QEvent::KeyRelease= and =event->type() == QEvent::KeyPress=.
+
+    if (backspace_p && is_control_cmd_pressed) {
+        return true;
+    }
+#endif
+
+    return false;
+}
+
+
+// Template function to check if a string is all lowercase
+template <typename CharT>
+bool is_all_lower(const std::basic_string<CharT>& input) {
+    std::locale loc;
+    return std::all_of(input.begin(), input.end(), [&loc](CharT c) {
+        return std::islower(c, loc) || !std::isalpha(c, loc);
+    });
+}
+
+// Template function for calculate_partial_ratio
+template <typename StringType>
+int calculate_partial_ratio(const StringType& filterString, const StringType& key, bool smart_case_p) {
+    StringType s1 = filterString;
+    StringType s2 = key;
+
+    // Convert strings to lowercase if smart_case_p is true and filterString is all lowercase
+    if (smart_case_p && is_all_lower(s1)) {
+        s1 = to_lower(s1);
+        s2 = to_lower(s2);
+    }
+
+    // Calculate the partial ratio score
+    // Ensure that rapidfuzz::fuzz::partial_ratio can handle StringType
+    int score = static_cast<int>(rapidfuzz::fuzz::partial_ratio(s1, s2));
+
+    return score;
+}
+
+// Explicit template instantiation for std::wstring and std::string
+template int calculate_partial_ratio<std::string>(const std::string&, const std::string&, bool);
+template int calculate_partial_ratio<std::wstring>(const std::wstring&, const std::wstring&, bool);
+
+bool match_patterns(const QString& key, const QStringList& patterns) {
+    for (const QString &pattern : patterns) {
+        bool has_upper_case = std::any_of(pattern.begin(), pattern.end(), [](QChar c) { return c.isUpper(); });
+        QRegularExpression::PatternOptions options = has_upper_case ? QRegularExpression::NoPatternOption
+            : QRegularExpression::CaseInsensitiveOption;
+        QRegularExpression regex(pattern, options);
+
+        if (!regex.match(key).hasMatch()) {
+            return false; // If any pattern does not match, reject the string
+        }
+    }
+    return true; // All patterns matched
+}
+
+bool bool_regex_match(const QString& search_text, const QString& key) {
+    if (search_text.isEmpty()) return true;
+
+    QStringList patterns = search_text.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+    return match_patterns(key, patterns);
 }
 
 QString get_ui_font_face_name() {
