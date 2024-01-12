@@ -1,3 +1,5 @@
+#include "utils.h"
+
 #include "mysortfilterproxymodel.h"
 #include <string>
 
@@ -87,7 +89,9 @@ MySortFilterProxyModel::~MySortFilterProxyModel() {
 }
 
 int MySortFilterProxyModel::compute_score(QString filter_string, QString item_string) const{
-    return static_cast<int>(rapidfuzz::fuzz::partial_ratio(filter_string.toStdWString(), item_string.toStdWString()));
+    // return static_cast<int>(rapidfuzz::fuzz::partial_ratio(filter_string.toStdWString(), item_string.toStdWString()));
+    return calculate_partial_ratio(filter_string.toStdWString(), item_string.toStdWString());
+
 }
 
 int MySortFilterProxyModel::compute_score(fzf_pattern_t* pattern, QString item_string) const{
