@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+set -exo pipefail
 # prerequisite: brew install qt@5 freeglut mesa harfbuzz
 
 #sys_glut_clfags=`pkg-config --cflags glut gl`
