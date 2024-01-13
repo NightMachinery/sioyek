@@ -267,7 +267,7 @@ public:
 	CommandManager* get_command_manager();
 
 	void move_vertical(float amount);
-	void move_horizontal(float amount);
+	void move_horizontal(float amount, bool force_p = false);
 	void get_window_params_for_one_window_mode(int* main_window_size, int* main_window_move);
 	void get_window_params_for_two_window_mode(int* main_window_size, int* main_window_move, int* helper_window_size, int* helper_window_move);
 	void apply_window_params_for_one_window_mode(bool force_resize=false);

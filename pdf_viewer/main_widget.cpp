@@ -1838,11 +1838,11 @@ void MainWidget::wheelEvent(QWheelEvent* wevent) {
         float inverse_factor = INVERTED_HORIZONTAL_SCROLLING ? -1.0f : 1.0f;
 
         if (wevent->angleDelta().y() > 0) {
-            move_horizontal(-72.0f * horizontal_move_amount * num_repeats_f * inverse_factor);
+            move_horizontal(-72.0f * horizontal_move_amount * num_repeats_f * inverse_factor, true);
             return;
         }
         if (wevent->angleDelta().y() < 0) {
-            move_horizontal(72.0f * horizontal_move_amount * num_repeats_f * inverse_factor);
+            move_horizontal(72.0f * horizontal_move_amount * num_repeats_f * inverse_factor, true);
             return;
         }
 
@@ -2399,8 +2399,8 @@ void MainWidget::zoom(WindowPos pos, float zoom_factor, bool zoom_in) {
     validate_render();
 }
 
-void MainWidget::move_horizontal(float amount){
-    if (!horizontal_scroll_locked) {
+void MainWidget::move_horizontal(float amount, bool force_p){
+    if (force_p || !horizontal_scroll_locked) {
         move_document(amount, 0);
         validate_render();
     }
