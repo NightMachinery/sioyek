@@ -2,6 +2,9 @@
 set -exo pipefail
 # prerequisite: brew install qt@5 freeglut mesa harfbuzz
 
+incremental_p="${SIOYEK_BUILD_INCREMENTAL_P}"
+# Using `SIOYEK_BUILD_INCREMENTAL_P=y` will cause the build script to become optimized for the local development builds and not publishing the app.
+
 #sys_glut_clfags=`pkg-config --cflags glut gl`
 #sys_glut_libs=`pkg-config --libs glut gl`
 #sys_harfbuzz_clfags=`pkg-config --cflags harfbuzz`
@@ -34,15 +37,19 @@ cp pdf_viewer/keys.config build/sioyek.app/Contents/MacOS/keys.config
 cp pdf_viewer/keys_user.config build/sioyek.app/Contents/MacOS/keys_user.config
 cp tutorial.pdf build/sioyek.app/Contents/MacOS/tutorial.pdf
 
-# Capture the current PATH
-CURRENT_PATH=$(echo $PATH)
+if test -z "${incremental_p}" ; then
+	# Capture the current PATH
+	CURRENT_PATH=$(echo $PATH)
 
-# Define the path to the Info.plist file inside the app bundle
-INFO_PLIST="resources/Info.plist"
+	# Define the path to the Info.plist file inside the app bundle
+	INFO_PLIST="resources/Info.plist"
 
-# Add LSEnvironment key with PATH to Info.plist
-/usr/libexec/PlistBuddy -c "Add :LSEnvironment dict" "$INFO_PLIST" || echo "LSEnvironment already exists"
-/usr/libexec/PlistBuddy -c "Add :LSEnvironment:PATH string $CURRENT_PATH" "$INFO_PLIST" || /usr/libexec/PlistBuddy -c "Set :LSEnvironment:PATH $CURRENT_PATH" "$INFO_PLIST"
+	# Add LSEnvironment key with PATH to Info.plist
+	/usr/libexec/PlistBuddy -c "Add :LSEnvironment dict" "$INFO_PLIST" || echo "LSEnvironment already exists"
+	/usr/libexec/PlistBuddy -c "Add :LSEnvironment:PATH string $CURRENT_PATH" "$INFO_PLIST" || /usr/libexec/PlistBuddy -c "Set :LSEnvironment:PATH $CURRENT_PATH" "$INFO_PLIST"
 
-macdeployqt build/sioyek.app -dmg
-zip -r sioyek-release-mac.zip build/sioyek.dmg
+	macdeployqt build/sioyek.app -dmg
+
+	zip -r sioyek-release-mac.zip build/sioyek.dmg
+fi
+
