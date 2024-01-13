@@ -3950,8 +3950,8 @@ void MainWidget::zoom(WindowPos pos, float zoom_factor, bool zoom_in) {
     validate_render();
 }
 
-bool MainWidget::move_horizontal(float amount, bool force) {
-    if (!horizontal_scroll_locked) {
+bool MainWidget::move_horizontal(float amount, bool force, bool ignore_lock_p) {
+    if (ignore_lock_p || !horizontal_scroll_locked) {
         bool ret = move_document(amount, 0, force);
         validate_render();
         return ret;
