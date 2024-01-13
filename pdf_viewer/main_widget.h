@@ -28,6 +28,8 @@
 #include "path.h"
 #include "checksum.h"
 
+#include <QMap>
+
 extern float VERTICAL_MOVE_AMOUNT;
 extern float HORIZONTAL_MOVE_AMOUNT;
 
@@ -35,6 +37,8 @@ extern float HORIZONTAL_MOVE_AMOUNT;
 class MainWidget : public QWidget, ConfigFileChangeListener{
 
 public:
+	QMap<int, bool> keyStates;
+
 	fz_context* mupdf_context = nullptr;
 	DatabaseManager* db_manager = nullptr;
 	DocumentManager* document_manager = nullptr;
@@ -158,6 +162,9 @@ public:
 	void handle_escape();
 	bool is_waiting_for_symbol();
 	void key_event(bool released, QKeyEvent* kevent);
+
+	bool isKeyPressed(int key) const;
+
 	void handle_left_click(WindowPos click_pos, bool down, bool is_shift_pressed, bool is_control_pressed, bool is_alt_pressed);
 	void handle_right_click(WindowPos click_pos, bool down, bool is_shift_pressed, bool is_control_pressed, bool is_alt_pressed);
 

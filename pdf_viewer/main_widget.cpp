@@ -1221,6 +1221,7 @@ void MainWidget::key_event(bool released, QKeyEvent* kevent) {
 
 
     if (released == false) {
+        keyStates[kevent->key()] = true;
 
         if (kevent->key() == Qt::Key::Key_Escape) {
             handle_escape();
@@ -1264,8 +1265,14 @@ void MainWidget::key_event(bool released, QKeyEvent* kevent) {
         for (auto& command : commands) {
             handle_command_types(std::move(command), num_repeats);
         }
+    } else {
+        keyStates[kevent->key()] = false;
     }
 
+}
+
+bool MainWidget::isKeyPressed(int key) const {
+    return keyStates.value(key, false);
 }
 
 void MainWidget::handle_right_click(WindowPos click_pos, bool down, bool is_shift_pressed, bool is_control_pressed, bool is_alt_pressed) {
