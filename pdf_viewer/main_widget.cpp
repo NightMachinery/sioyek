@@ -1799,12 +1799,15 @@ void MainWidget::wheelEvent(QWheelEvent* wevent) {
 
     bool is_control_pressed = QApplication::queryKeyboardModifiers().testFlag(Qt::ControlModifier) ||
         QApplication::queryKeyboardModifiers().testFlag(Qt::MetaModifier);
-    bool is_hyper = redisFlagGet("hyper_modality");
-    bool zoom_p = is_control_pressed || is_hyper;
+    bool is_z_pressed = isKeyPressed(Qt::Key_Z);
+    bool is_hyper = false;
+    // bool is_hyper = redisFlagGet("hyper_modality");
+    bool zoom_p = is_control_pressed || is_hyper || is_z_pressed;
 
     bool is_shift_pressed = QApplication::queryKeyboardModifiers().testFlag(Qt::ShiftModifier);
     bool is_esc_pressed = isKeyPressed(Qt::Key_Escape);
-    bool scroll_horizontally_p = is_shift_pressed || is_esc_pressed;
+    bool is_x_pressed = isKeyPressed(Qt::Key_X);
+    bool scroll_horizontally_p = is_shift_pressed || is_esc_pressed || is_x_pressed;
 
     bool is_visual_mark_mode = opengl_widget->get_should_draw_vertical_line() && visual_scroll_mode;
 
