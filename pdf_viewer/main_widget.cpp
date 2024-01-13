@@ -1760,8 +1760,12 @@ void MainWidget::wheelEvent(QWheelEvent* wevent) {
 
     bool is_control_pressed = QApplication::queryKeyboardModifiers().testFlag(Qt::ControlModifier) ||
         QApplication::queryKeyboardModifiers().testFlag(Qt::MetaModifier);
+    bool zoom_p = is_control_pressed;
 
     bool is_shift_pressed = QApplication::queryKeyboardModifiers().testFlag(Qt::ShiftModifier);
+    bool is_esc_pressed = isKeyPressed(Qt::Key_Escape);
+    bool scroll_horizontally_p = is_shift_pressed || is_esc_pressed;
+
     bool is_visual_mark_mode = opengl_widget->get_should_draw_vertical_line() && visual_scroll_mode;
 
 
@@ -1788,7 +1792,7 @@ void MainWidget::wheelEvent(QWheelEvent* wevent) {
         num_repeats = 1;
     }
 
-    if ((!is_control_pressed) && (!is_shift_pressed)) {
+    if ((!zoom_p) && (!scroll_horizontally_p)) {
         if (opengl_widget->is_window_point_in_overview({ normal_x, normal_y })) {
             if (wevent->angleDelta().y() > 0) {
                 scroll_overview(-1);
@@ -1836,12 +1840,12 @@ void MainWidget::wheelEvent(QWheelEvent* wevent) {
         }
     }
 
-    if (is_control_pressed) {
+    if (zoom_p) {
         float zoom_factor = 1.0f + num_repeats_f * (ZOOM_INC_FACTOR - 1.0f);
         zoom(mouse_window_pos, zoom_factor, wevent->angleDelta().y() > 0);
         return;
     }
-    if (is_shift_pressed) {
+    if (scroll_horizontally_p) {
         float inverse_factor = INVERTED_HORIZONTAL_SCROLLING ? -1.0f : 1.0f;
 
         if (wevent->angleDelta().y() > 0) {
