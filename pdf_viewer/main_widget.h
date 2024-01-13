@@ -165,6 +165,8 @@ public:
 
 	bool isKeyPressed(int key) const;
 
+	bool redisFlagGet(const QString &name);
+
 	void handle_left_click(WindowPos click_pos, bool down, bool is_shift_pressed, bool is_control_pressed, bool is_alt_pressed);
 	void handle_right_click(WindowPos click_pos, bool down, bool is_shift_pressed, bool is_control_pressed, bool is_alt_pressed);
 
@@ -364,6 +366,8 @@ public:
 	void mouseDoubleClickEvent(QMouseEvent* mevent) override;
 	void wheelEvent(QWheelEvent* wevent) override;
 
+private:
+	redisContext *redisContext_; // Member variable to hold the Redis connection
 };
 
 #endif

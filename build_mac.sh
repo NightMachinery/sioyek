@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -exo pipefail
-# prerequisite: brew install qt@5 freeglut mesa harfbuzz
+# prerequisite: brew install qt@5 freeglut mesa harfbuzz hiredis
+export INCLUDE_PATH=/opt/homebrew/include
+export LIBRARY_PATH=/opt/homebrew/lib
 
 incremental_p="${SIOYEK_BUILD_INCREMENTAL_P}"
 # Using `SIOYEK_BUILD_INCREMENTAL_P=y` will cause the build script to become optimized for the local development builds and not publishing the app.

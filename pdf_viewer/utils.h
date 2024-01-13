@@ -23,6 +23,8 @@
 #include "utf8.h"
 #include "coordinates.h"
 
+#include <hiredis/hiredis.h>
+
 #define LL_ITER(name, start) for(auto name=start;(name);name=name->next)
 
 struct ParsedUri {

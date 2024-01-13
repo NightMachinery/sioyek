@@ -1,10 +1,11 @@
 TEMPLATE = app
 TARGET = sioyek
 VERSION = 2.0.0
+
 INCLUDEPATH += ./pdf_viewer\
               mupdf/include \
               zlib
-          
+INCLUDEPATH += $$(INCLUDE_PATH)
 
 QT += core opengl gui widgets network 3dinput 
 
@@ -124,7 +125,10 @@ unix:!mac {
 
 mac {
     QMAKE_CXXFLAGS += -std=c++17
+
     LIBS += -ldl -Lmupdf/build/release -lmupdf -lmupdf-third -lmupdf-threads -lz
+    LIBS += -L$$(LIBRARY_PATH) -lhiredis
+
     CONFIG+=sdk_no_version_check
     QMAKE_MACOSX_DEPLOYMENT_TARGET = 11
     ICON = pdf_viewer\icon2.ico

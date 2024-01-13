@@ -347,6 +347,17 @@ MainWidget::MainWidget(fz_context* mupdf_context,
     should_quit(should_quit_ptr),
     command_manager(command_manager)
 {
+    ///
+    // Initialize the Redis connection
+    redisContext_ = redisConnect("127.0.0.1", 6379);
+
+    if (redisContext_ != nullptr && redisContext_->err) {
+        // If the connection failed, clean up and set the pointer to nullptr
+        redisFree(redisContext_);
+        redisContext_ = nullptr;
+    }
+    ///
+
     setMouseTracking(true);
     setAcceptDrops(true);
     setAttribute(Qt::WA_DeleteOnClose);
@@ -511,6 +522,14 @@ MainWidget::MainWidget(fz_context* mupdf_context,
 }
 
 MainWidget::~MainWidget() {
+    ///
+    // Clean up the Redis connection if it was established
+    if (redisContext_ != nullptr) {
+        redisFree(redisContext_);
+        redisContext_ = nullptr;
+    }
+    ///
+
     remove_self_from_windows();
 
     if (windows.size() == 0) {
@@ -1275,6 +1294,26 @@ bool MainWidget::isKeyPressed(int key) const {
     return keyStates.value(key, false);
 }
 
+bool MainWidget::redisFlagGet(const QString &name) {
+    if (redisContext_ == nullptr) {
+        return false; // Return false if the connection was not established
+    }
+
+    redisReply *reply = static_cast<redisReply*>(redisCommand(redisContext_, "GET %s", name.toUtf8().constData()));
+    if (reply == nullptr) {
+        return false; // Return false if the command failed
+    }
+
+    bool result = false; // Default result is false
+    if (reply->type == REDIS_REPLY_STRING) {
+        // Convert the reply to a bool
+        result = (QString(reply->str).toLower() == "true");
+    }
+
+    freeReplyObject(reply); // Free the reply object
+    return result; // Return the result
+}
+
 void MainWidget::handle_right_click(WindowPos click_pos, bool down, bool is_shift_pressed, bool is_control_pressed, bool is_alt_pressed) {
 
     if (is_rotated()) {
@@ -1760,7 +1799,8 @@ void MainWidget::wheelEvent(QWheelEvent* wevent) {
 
     bool is_control_pressed = QApplication::queryKeyboardModifiers().testFlag(Qt::ControlModifier) ||
         QApplication::queryKeyboardModifiers().testFlag(Qt::MetaModifier);
-    bool zoom_p = is_control_pressed;
+    bool is_hyper = redisFlagGet("hyper_modality");
+    bool zoom_p = is_control_pressed || is_hyper;
 
     bool is_shift_pressed = QApplication::queryKeyboardModifiers().testFlag(Qt::ShiftModifier);
     bool is_esc_pressed = isKeyPressed(Qt::Key_Escape);
