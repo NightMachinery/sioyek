@@ -5,6 +5,7 @@
 #include <qdir.h>
 
 extern float ZOOM_INC_FACTOR;
+extern float SCROLL_ZOOM_INC_FACTOR;
 extern float GAMMA;
 extern float VERTICAL_MOVE_AMOUNT;
 extern float HORIZONTAL_MOVE_AMOUNT;
@@ -338,6 +339,7 @@ ConfigManager::ConfigManager(const Path& default_path, const Path& auto_path ,co
 	configs.push_back({ L"inverse_search_command", &INVERSE_SEARCH_COMMAND, string_serializer, string_deserializer, nullptr });
 	configs.push_back({ L"libgen_address", &LIBGEN_ADDRESS, string_serializer, string_deserializer, nullptr });
 	configs.push_back({ L"zoom_inc_factor", &ZOOM_INC_FACTOR, float_serializer, float_deserializer, nullptr });
+	configs.push_back({ L"scroll_zoom_inc_factor", &SCROLL_ZOOM_INC_FACTOR, float_serializer, float_deserializer, nullptr });
 	configs.push_back({ L"vertical_move_amount", &VERTICAL_MOVE_AMOUNT, float_serializer, float_deserializer, nullptr });
 	configs.push_back({ L"horizontal_move_amount", &HORIZONTAL_MOVE_AMOUNT, float_serializer, float_deserializer, nullptr });
 	configs.push_back({ L"move_screen_percentage", &MOVE_SCREEN_PERCENTAGE, float_serializer, float_deserializer, nullptr });
