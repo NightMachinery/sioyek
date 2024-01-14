@@ -2306,3 +2306,24 @@ int calculate_partial_ratio(const std::wstring& filterString, const std::wstring
     int score = static_cast<int>(rapidfuzz::fuzz::partial_ratio(s1, s2));
     return score;
 }
+
+bool match_patterns(const QString& key, const QStringList& patterns) {
+    for (const QString &pattern : patterns) {
+        bool has_upper_case = std::any_of(pattern.begin(), pattern.end(), [](QChar c) { return c.isUpper(); });
+        QRegularExpression::PatternOptions options = has_upper_case ? QRegularExpression::NoPatternOption
+            : QRegularExpression::CaseInsensitiveOption;
+        QRegularExpression regex(pattern, options);
+
+        if (!regex.match(key).hasMatch()) {
+            return false; // If any pattern does not match, reject the string
+        }
+    }
+    return true; // All patterns matched
+}
+
+bool bool_regex_match(const QString& search_text, const QString& key) {
+    if (search_text.isEmpty()) return true;
+
+    QStringList patterns = search_text.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+    return match_patterns(key, patterns);
+}

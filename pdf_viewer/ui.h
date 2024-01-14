@@ -48,6 +48,7 @@ extern bool SMALL_TOC;
 extern bool MULTILINE_MENUS;
 extern bool EMACS_MODE;
 extern bool FUZZY_SEARCHING;
+extern bool REGEX_SEARCHING;
 
 
 class HierarchialSortFilterProxyModel : public QSortFilterProxyModel {
@@ -641,6 +642,9 @@ public:
 			int score = 0;
 			if (FUZZY_SEARCHING) {
 				score = static_cast<int>(rapidfuzz::fuzz::partial_ratio(search_text_string, encoded));
+			}
+			else if (REGEX_SEARCHING) {
+				score = bool_regex_match(QString::fromStdString(search_text_string), QString::fromStdString(encoded)) ? 100 : 0;
 			}
 			else {
 				fts::fuzzy_match(search_text_string.c_str(), encoded.c_str(), score);

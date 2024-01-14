@@ -1,6 +1,7 @@
 #include "ui.h"
 #include <qfiledialog.h>
 
+
 extern std::wstring DEFAULT_OPEN_FILE_PATH;
 
 std::wstring select_command_file_name(std::string command_name) {
@@ -117,23 +118,23 @@ bool HierarchialSortFilterProxyModel::filterAcceptsRow(int source_row, const QMo
 bool MySortFilterProxyModel::filterAcceptsRow(int source_row,
 	const QModelIndex& source_parent) const
 {
-	if (FUZZY_SEARCHING) {
-
+	if (FUZZY_SEARCHING || REGEX_SEARCHING) {
 		QModelIndex source_index = sourceModel()->index(source_row, this->filterKeyColumn(), source_parent);
-		if (source_index.isValid())
-		{
-			// check current index itself :
+		if (!source_index.isValid()) {
+			return false;
+		}
 
-			QString key = sourceModel()->data(source_index, filterRole()).toString();
-			if (filterString.size() == 0) return true;
+		if (filterString.size() == 0) return true;
+
+		QString key = sourceModel()->data(source_index, filterRole()).toString();
+
+		if (FUZZY_SEARCHING) {
 			std::wstring s1 = filterString.toStdWString();
 			std::wstring s2 = key.toStdWString();
 			int score = calculate_partial_ratio(s1, s2);
-
 			return score > 50;
-		}
-		else {
-			return false;
+		} else if (REGEX_SEARCHING) {
+			return bool_regex_match(filterString, key);
 		}
 	}
 	else {
@@ -142,7 +143,7 @@ bool MySortFilterProxyModel::filterAcceptsRow(int source_row,
 }
 
 void MySortFilterProxyModel::setFilterCustom(QString filterString) {
-	if (FUZZY_SEARCHING) {
+	if (FUZZY_SEARCHING || REGEX_SEARCHING) {
 		this->filterString = filterString;
 		this->setFilterFixedString(filterString);
 		sort(0);
@@ -164,12 +165,16 @@ bool MySortFilterProxyModel::lessThan(const QModelIndex& left,
 		int right_score = calculate_partial_ratio(filterString.toStdWString(), rightData.toStdWString());
 		return left_score > right_score;
 	}
+	else if (REGEX_SEARCHING) {
+		// When regex searching is enabled, maintain the original order
+		return left.row() < right.row();
+	}
 	else {
 		return QSortFilterProxyModel::lessThan(left, right);
 	}
 }
- MySortFilterProxyModel::MySortFilterProxyModel() {
-	 if (FUZZY_SEARCHING) {
+MySortFilterProxyModel::MySortFilterProxyModel() {
+	 if (FUZZY_SEARCHING || REGEX_SEARCHING) {
 		 setDynamicSortFilter(true);
 	 }
 }
