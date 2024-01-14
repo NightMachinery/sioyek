@@ -237,6 +237,7 @@ bool SHOULD_HIGHLIGHT_UNSELECTED_SEARCH = false;
 int KEYBOARD_SELECT_FONT_SIZE = 20;
 int DOCUMENTATION_FONT_SIZE = 16;
 bool FUZZY_SEARCHING = false;
+bool REGEX_SEARCHING = false;
 bool INVERTED_HORIZONTAL_SCROLLING = false;
 bool TOC_JUMP_ALIGN_TOP = false;
 float CUSTOM_COLOR_CONTRAST = 0.5f;
@@ -996,6 +997,7 @@ ConfigManager::ConfigManager(const Path& default_path, const Path& auto_path, co
     add_bool(L"highlight_links", &SHOULD_HIGHLIGHT_LINKS);
     add_bool(L"should_highlight_unselected_search", &SHOULD_HIGHLIGHT_UNSELECTED_SEARCH);
     add_bool(L"fuzzy_searching", &FUZZY_SEARCHING);
+    add_bool(L"regex_searching", &REGEX_SEARCHING);
     add_bool(L"inverted_horizontal_scrolling", &INVERTED_HORIZONTAL_SCROLLING);
     add_bool(L"toc_jump_align_top", &TOC_JUMP_ALIGN_TOP);
     add_bool(L"autocenter_visual_scroll", &AUTOCENTER_VISUAL_SCROLL);

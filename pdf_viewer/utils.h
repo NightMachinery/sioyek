@@ -15,6 +15,13 @@
 #include <qcommandlineparser.h>
 
 #include <qkeyevent.h>
+
+#include <QString>
+#include <QStringList>
+#include <QRegularExpression>
+
+#include <QDebug>
+
 #include <qstandarditemmodel.h>
 #include <qpoint.h>
 #include <qjsonarray.h>
@@ -462,6 +469,8 @@ QString get_status_font_face_name();
 std::vector<fz_stext_char*> reorder_stext_line(fz_stext_line* line);
 std::vector<fz_stext_char*> reorder_mixed_stext_line(fz_stext_line* line);
 bool should_trigger_delete(QKeyEvent *key_event);
+bool match_patterns(const QString& key, const QStringList& patterns);
+bool bool_regex_match(const QString& search_text, const QString& key);
 
 class TextToSpeechHandler {
 public:

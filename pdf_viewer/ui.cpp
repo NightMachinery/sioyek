@@ -1408,10 +1408,13 @@ bool CommandSelector::on_text_change(const QString& text) {
     for (int i = 0; i < elements_matching_prefix.size(); i++) {
         std::string encoded = utf8_encode(elements_matching_prefix.at(i).toStdWString());
         int score = 0;
-        if (is_fuzzy) {
-            //score = static_cast<int>(rapidfuzz::fuzz::partial_ratio(search_text_string, encoded));
-            score = fzf_get_score(encoded.c_str(), pattern, slab);
+
+        if (REGEX_SEARCHING) {
+            score = bool_regex_match(QString::fromStdString(search_text_string), QString::fromStdString(encoded)) ? 100 : 0;
+        }
+        else if (is_fuzzy) {
 			// score = calculate_partial_ratio(search_text_string, encoded);
+            score = fzf_get_score(encoded.c_str(), pattern, slab);
         }
         else {
             fts::fuzzy_match(search_text_string.c_str(), encoded.c_str(), score);
