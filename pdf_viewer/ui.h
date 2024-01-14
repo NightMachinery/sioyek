@@ -739,7 +739,9 @@ public:
 
 		root = expand_home_dir(root);
 		QDir directory(root);
+
 		QStringList res = directory.entryList({ prefix + "*" });
+		// fuzzy_searching or regex_searching won't be used if the user is directly typing a matching prefix of the files.
 		if (res.size() == 0) {
 			std::string encoded_prefix = utf8_encode(prefix.toStdWString());
 			QStringList all_directory_files = directory.entryList();
@@ -750,6 +752,9 @@ public:
 				int score = 0;
 				if (FUZZY_SEARCHING) {
 					score = static_cast<int>(rapidfuzz::fuzz::partial_ratio(encoded_prefix, encoded_file));
+				}
+				else if (REGEX_SEARCHING) {
+					score = bool_regex_match(QString::fromStdString(encoded_prefix), QString::fromStdString(encoded_file)) ? 100 : 0;
 				}
 				else {
 					fts::fuzzy_match(encoded_prefix.c_str(), encoded_file.c_str(), score);
