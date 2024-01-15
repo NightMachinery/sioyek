@@ -2428,6 +2428,19 @@ public:
     bool requires_document() { return false; }
 };
 
+class PushStateCommand : public Command {
+public:
+    static inline const std::string cname = "push_state";
+    static inline const std::string hname = "Pushes the current state in the navigation history";
+        PushStateCommand(MainWidget* w) : Command(cname, w) {};
+
+    void perform() {
+		widget->push_state();
+	}
+
+	bool requires_document() { return false; }
+};
+
 class PrevStateCommand : public Command {
 public:
     static inline const std::string cname = "prev_state";
@@ -6624,6 +6637,7 @@ CommandManager::CommandManager(ConfigManager* config_manager) {
     register_command<PortalCommand>();
     register_command<PortalCommand>();
     register_command<CreateVisiblePortalCommand>();
+    register_command<PushStateCommand>();
     register_command<NextStateCommand>();
     register_command<PrevStateCommand>();
     register_command<NextStateCommand>();
