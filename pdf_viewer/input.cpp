@@ -221,14 +221,12 @@ struct ParseState {
 
 class DeleteLastHighlightCommand : public Command {
 public:
-    DeleteLastHighlightCommand(MainWidget* w) : Command(w) {};
+    static inline const std::string cname = "delete_last_highlight";
+    static inline const std::string hname = "Delete the last highlight";
+        DeleteLastHighlightCommand(MainWidget* w) : Command(cname, w) {};
 
 	void perform() {
 		widget->handle_delete_last_highlight();
-	}
-
-	std::string get_name() {
-		return "delete_last_highlight";
 	}
 };
 
@@ -3114,6 +3112,38 @@ public:
     void perform() {
         widget->main_document_view->move_pages(std::min(-1, -num_repeats));
     }
+};
+
+class NextPageSmartCommand : public Command {
+public:
+    static inline const std::string cname = "next_page_smart";
+    static inline const std::string hname = "Go to next page (tries to go to the next column on two-column pages)";
+    NextPageSmartCommand(MainWidget* w) : Command(cname, w) {};
+
+    void perform() {
+		auto my_num_repeats = std::max(1, num_repeats);
+		for (int i = 0; i < my_num_repeats; i++) {
+			if (!(widget->main_document_view->next_page_smart())) {
+				break;
+			}
+		}
+	}
+};
+
+class PreviousPageSmartCommand : public Command {
+public:
+    static inline const std::string cname = "previous_page_smart";
+    static inline const std::string hname = "Go to previous page (tries to go to the previous column on two-column pages)";
+        PreviousPageSmartCommand(MainWidget* w) : Command(cname, w) {};
+
+    void perform() {
+		auto my_num_repeats = std::max(1, num_repeats);
+		for (int i = 0; i < my_num_repeats; i++) {
+			if (!(widget->main_document_view->previous_page_smart())) {
+				break;
+			}
+		}
+	}
 };
 
 class ZoomOutCommand : public Command {
@@ -6567,6 +6597,8 @@ CommandManager::CommandManager(ConfigManager* config_manager) {
     register_command<FitToPageWidthSmartCommand>();
     register_command<NextPageCommand>();
     register_command<PreviousPageCommand>();
+    register_command<NextPageSmartCommand>();
+    register_command<PreviousPageSmartCommand>();
     register_command<OpenDocumentCommand>();
     register_command<ScreenshotCommand>();
     register_command<FramebufferScreenshotCommand>();
