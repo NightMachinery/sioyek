@@ -544,7 +544,7 @@ bool DocumentView::next_page_smart() {
 }
 
 float DocumentView::set_zoom_level(float zl, bool should_exit_auto_resize_mode) {
-	const float max_zoom_level = 10.0f;
+	const float max_zoom_level = 15.0f;
 	if (zl > max_zoom_level) {
 		zl = max_zoom_level;
 	}
@@ -557,7 +557,7 @@ float DocumentView::set_zoom_level(float zl, bool should_exit_auto_resize_mode) 
 }
 
 float DocumentView::zoom_in(float zoom_factor) {
-	const float max_zoom_level = 10.0f;
+	const float max_zoom_level = 15.0f;
 	float new_zoom_level = zoom_level * zoom_factor;
 
 	if (new_zoom_level > max_zoom_level) {
