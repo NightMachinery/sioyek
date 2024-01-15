@@ -306,6 +306,18 @@ class NextStateCommand : public Command {
 	bool requires_document() { return false; }
 };
 
+class PushStateCommand : public Command {
+
+	void perform(MainWidget* widget) {
+		widget->push_state();
+	}
+
+	std::string get_name() {
+		return "push_state";
+	}
+	bool requires_document() { return false; }
+};
+
 class PrevStateCommand : public Command {
 
 	void perform(MainWidget* widget) {
@@ -2262,6 +2274,7 @@ CommandManager::CommandManager(ConfigManager* config_manager) {
 	new_commands["portal"] = []() {return std::make_unique< PortalCommand>(); };
 	new_commands["next_state"] = []() {return std::make_unique< NextStateCommand>(); };
 	new_commands["prev_state"] = []() {return std::make_unique< PrevStateCommand>(); };
+	new_commands["push_state"] = []() {return std::make_unique< PushStateCommand>(); };
 	new_commands["delete_link"] = []() {return std::make_unique< DeletePortalCommand>(); };
 	new_commands["delete_portal"] = []() {return std::make_unique< DeletePortalCommand>(); };
 	new_commands["delete_bookmark"] = []() {return std::make_unique< DeleteBookmarkCommand>(); };
