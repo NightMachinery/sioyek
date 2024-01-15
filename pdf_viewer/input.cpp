@@ -499,6 +499,34 @@ class PreviousPageCommand : public Command {
 	}
 };
 
+class NextPageSmartCommand : public Command {
+	void perform(MainWidget* widget) {
+		auto my_num_repeats = std::max(1, num_repeats);
+		for (int i = 0; i < my_num_repeats; i++) {
+			if (!(widget->main_document_view->next_page_smart())) {
+				break;
+			}
+		}
+	}
+	std::string get_name() {
+		return "next_page_smart";
+	}
+};
+
+class PreviousPageSmartCommand : public Command {
+	void perform(MainWidget* widget) {
+		auto my_num_repeats = std::max(1, num_repeats);
+		for (int i = 0; i < my_num_repeats; i++) {
+			if (!(widget->main_document_view->previous_page_smart())) {
+				break;
+			}
+		}
+	}
+	std::string get_name() {
+		return "previous_page_smart";
+	}
+};
+
 class ZoomOutCommand : public Command {
 
 	void perform(MainWidget* widget) {
@@ -2220,6 +2248,8 @@ CommandManager::CommandManager(ConfigManager* config_manager) {
 	new_commands["fit_to_page_width_smart"] = []() {return std::make_unique< FitToPageWidthSmartCommand>(); };
 	new_commands["next_page"] = []() {return std::make_unique< NextPageCommand>(); };
 	new_commands["previous_page"] = []() {return std::make_unique< PreviousPageCommand>(); };
+	new_commands["next_page_smart"] = []() {return std::make_unique< NextPageSmartCommand>(); };
+	new_commands["previous_page_smart"] = []() {return std::make_unique< PreviousPageSmartCommand>(); };
 	new_commands["open_document"] = []() {return std::make_unique< OpenDocumentCommand>(); };
 	new_commands["add_bookmark"] = []() {return std::make_unique< AddBookmarkCommand>(); };
 	new_commands["add_highlight"] = []() {return std::make_unique< AddHighlightCommand>(); };
