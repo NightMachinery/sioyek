@@ -294,7 +294,7 @@ int DocumentView::get_highlight_index_in_pos(WindowPos window_pos) {
 void DocumentView::add_mark(char symbol) {
 	//assert(current_document);
 	if (current_document) {
-		current_document->add_mark(symbol, offset_y);
+		current_document->add_mark(symbol, offset_x, offset_y, zoom_level);
 	}
 }
 

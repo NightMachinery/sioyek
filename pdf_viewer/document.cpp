@@ -282,7 +282,7 @@ const std::vector<Highlight> Document::get_highlights_sorted(char type) const {
 }
 
 
-void Document::add_mark(char symbol, float y_offset) {
+void Document::add_mark(char symbol, float x_offset, float y_offset, float zoom_level) {
 	int current_mark_index = get_mark_index(symbol);
 	if (current_mark_index == -1) {
 		marks.push_back({ y_offset, symbol });
