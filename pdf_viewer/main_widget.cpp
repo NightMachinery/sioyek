@@ -56,6 +56,7 @@
 #include "main_widget.h"
 
 
+extern bool KEYBOARD_SELECT_COPY_P;
 extern bool SHOULD_USE_MULTIPLE_MONITORS;
 extern bool SORT_BOOKMARKS_BY_LOCATION;
 extern bool FLAT_TABLE_OF_CONTENTS;
@@ -3243,6 +3244,10 @@ void MainWidget::handle_keyboard_select(const std::wstring& text) {
             }
 
 		}
+
+        if (KEYBOARD_SELECT_COPY_P) {
+            copy_to_clipboard(this->selected_text);
+        }
 	}
 }
 
