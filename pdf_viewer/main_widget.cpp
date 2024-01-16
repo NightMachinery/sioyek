@@ -103,6 +103,7 @@ extern "C" void hideWindowTitleBar(WId);
 
 extern int next_window_id;
 
+extern bool KEYBOARD_SELECT_COPY_P;
 extern bool SHOULD_USE_MULTIPLE_MONITORS;
 extern bool MULTILINE_MENUS;
 extern bool SORT_BOOKMARKS_BY_LOCATION;
@@ -5066,8 +5067,12 @@ void MainWidget::handle_keyboard_select(const std::wstring& text) {
                 opengl_widget->set_should_highlight_words(false);
             }
 
+		}
+
+        if (KEYBOARD_SELECT_COPY_P) {
+            copy_to_clipboard(this->selected_text);
         }
-    }
+	}
 }
 
 

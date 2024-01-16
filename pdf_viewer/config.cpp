@@ -5,6 +5,7 @@
 #include <qdir.h>
 //#include <ui.h>
 
+bool KEYBOARD_SELECT_COPY_P = false;
 int FONT_SIZE = -1;
 int STATUS_BAR_FONT_SIZE = -1;
 float BACKGROUND_COLOR[3] = { 0.97f, 0.97f, 0.97f };
@@ -930,6 +931,8 @@ ConfigManager::ConfigManager(const Path& default_path, const Path& auto_path, co
     add_float(L"epub_width", &EPUB_WIDTH, FloatExtras{0.0f, 1000.0f});
     add_float(L"epub_height", &EPUB_HEIGHT, FloatExtras{0.0f, 1000.0f});
     add_float(L"epub_font_size", &EPUB_FONT_SIZE, FloatExtras{0.0f, 100.0f});
+
+    add_bool(L"keyboard_select_copy_p", &KEYBOARD_SELECT_COPY_P);
     add_bool(L"default_dark_mode", &DEFAULT_DARK_MODE);
     add_bool(L"use_system_theme", &USE_SYSTEM_THEME);
     add_bool(L"use_custom_color_as_dark_system_theme", &USE_CUSTOM_COLOR_FOR_DARK_SYSTEM_THEME);
