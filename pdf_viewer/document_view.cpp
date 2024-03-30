@@ -551,13 +551,15 @@ bool DocumentView::goto_left_smart() {
     float page_width = current_document->get_page_size_smart(true, get_center_page_number(), &left_ratio, &right_ratio, &normal_page_width);
     float view_left_offset = (page_width / 2 - view_width / zoom_level / 2);
 
-	float previous_offset_x = offset_x;
+
+	float previous_offset_x = get_offset_x();
 	set_offset_x(view_left_offset);
+    float new_offset_x = get_offset_x();
 
 	// qDebug() << "offset_x:" << offset_x << "previous_offset_x:" << previous_offset_x;
 
 	auto acceptable_margin = GOTO_LEFTRIGHT_SMART_ACCEPTABLE_MARGIN;
-	return (((offset_x - previous_offset_x)) > acceptable_margin);
+	return (((new_offset_x - previous_offset_x)) > acceptable_margin);
 	// returns whether we moved more to the left or not
 }
 
@@ -574,13 +576,12 @@ bool DocumentView::goto_right_smart() {
     float page_width = current_document->get_page_size_smart(true, get_center_page_number(), &left_ratio, &right_ratio, &normal_page_width);
     float view_left_offset = -(page_width / 2 - view_width / zoom_level / 2);
 
-	float previous_offset_x = offset_x;
+	float previous_offset_x = get_offset_x();
 	set_offset_x(view_left_offset);
-
-	// qDebug() << "offset_x:" << offset_x << "previous_offset_x:" << previous_offset_x;
+    float new_offset_x = get_offset_x();
 
 	auto acceptable_margin = GOTO_LEFTRIGHT_SMART_ACCEPTABLE_MARGIN;
-	return ((-(offset_x - previous_offset_x)) > acceptable_margin);
+	return ((-(new_offset_x - previous_offset_x)) > acceptable_margin);
 	// returns whether we moved more to the right or not
 }
 
@@ -1269,7 +1270,7 @@ void DocumentView::rotate() {
 }
 
 bool DocumentView::goto_top_of_page() {
-	float previous_offset_y = offset_y;
+	float previous_offset_y = get_offset_y();
 
     int current_page = get_center_page_number();
     float offset_y = get_document()->get_accum_page_height(current_page) + static_cast<float>(view_height) / 2.0f / zoom_level;
@@ -1283,7 +1284,7 @@ bool DocumentView::goto_top_of_page() {
 }
 
 bool DocumentView::goto_bottom_of_page() {
-	float previous_offset_y = offset_y;
+	float previous_offset_y = get_offset_y();
 
     int current_page = get_center_page_number();
     float offset_y = get_document()->get_accum_page_height(current_page + 1) - static_cast<float>(view_height) / 2.0f / zoom_level;
