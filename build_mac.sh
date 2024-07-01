@@ -51,24 +51,19 @@ if test -z "${incremental_p}" ; then
 	# Capture the current PATH
 	CURRENT_PATH=$(echo $PATH)
 
-# Define the path to the Info.plist file inside the app bundle
-INFO_PLIST="build/sioyek.app/Contents/Info.plist"
+  # Define the path to the Info.plist file inside the app bundle
+  INFO_PLIST="build/sioyek.app/Contents/Info.plist"
 
 	# Add LSEnvironment key with PATH to Info.plist
 	/usr/libexec/PlistBuddy -c "Add :LSEnvironment dict" "$INFO_PLIST" || echo "LSEnvironment already exists"
 	/usr/libexec/PlistBuddy -c "Add :LSEnvironment:PATH string $CURRENT_PATH" "$INFO_PLIST" || /usr/libexec/PlistBuddy -c "Set :LSEnvironment:PATH $CURRENT_PATH" "$INFO_PLIST"
 
-# Hack is required to avoid race condition in macos in CI
-# See https://github.com/actions/runner-images/issues/7522
-if [[ -n "$GITHUB_ACTIONS" ]]; then
-  echo killing...; sudo pkill -9 XProtect >/dev/null || true;
-  echo waiting...; while pgrep XProtect; do sleep 3; done;
+  # Hack is required to avoid race condition in macos in CI
+  # See https://github.com/actions/runner-images/issues/7522
+  if [[ -n "$GITHUB_ACTIONS" ]]; then
+    echo killing...; sudo pkill -9 XProtect >/dev/null || true;
+    echo waiting...; while pgrep XProtect; do sleep 3; done;
+  fi
+  macdeployqt build/sioyek.app -dmg
+  zip -r sioyek-release-mac.zip build/sioyek.dmg
 fi
-
-sleep 5
-
-# mac deploys with qml currently don't work due to a qt bug
-# macdeployqt build/sioyek.app -qmldir=./pdf_viewer/touchui -dmg
-macdeployqt build/sioyek.app -dmg
-
-zip -r sioyek-release-mac.zip build/sioyek.dmg
