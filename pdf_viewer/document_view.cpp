@@ -24,6 +24,10 @@ extern bool SHOULD_HIGHLIGHT_LINKS;
 extern float HIDE_SYNCTEX_HIGHLIGHT_TIMEOUT;
 extern int PAGE_PADDINGS;
 
+float GOTO_LEFTRIGHT_SMART_ACCEPTABLE_MARGIN = 40 ;  // TODO make this configurable
+float GOTO_TOPBOTTOM_SMART_ACCEPTABLE_MARGIN = 40 ;  // TODO make this configurable
+
+
 DocumentView::DocumentView(DatabaseManager* db_manager,
     DocumentManager* document_manager,
     CachedChecksummer* checksummer) :
@@ -540,14 +544,23 @@ void DocumentView::goto_end() {
     }
 }
 
-void DocumentView::goto_left_smart() {
+bool DocumentView::goto_left_smart() {
 
     float left_ratio, right_ratio;
     int normal_page_width;
     float page_width = current_document->get_page_size_smart(true, get_center_page_number(), &left_ratio, &right_ratio, &normal_page_width);
     float view_left_offset = (page_width / 2 - view_width / zoom_level / 2);
 
-    set_offset_x(view_left_offset);
+
+	float previous_offset_x = get_offset_x();
+	set_offset_x(view_left_offset);
+    float new_offset_x = get_offset_x();
+
+	// qDebug() << "offset_x:" << offset_x << "previous_offset_x:" << previous_offset_x;
+
+	auto acceptable_margin = GOTO_LEFTRIGHT_SMART_ACCEPTABLE_MARGIN;
+	return (((new_offset_x - previous_offset_x)) > acceptable_margin);
+	// returns whether we moved more to the left or not
 }
 
 void DocumentView::goto_left() {
@@ -556,20 +569,68 @@ void DocumentView::goto_left() {
     set_offset_x(view_left_offset);
 }
 
-void DocumentView::goto_right_smart() {
+bool DocumentView::goto_right_smart() {
 
     float left_ratio, right_ratio;
     int normal_page_width;
     float page_width = current_document->get_page_size_smart(true, get_center_page_number(), &left_ratio, &right_ratio, &normal_page_width);
     float view_left_offset = -(page_width / 2 - view_width / zoom_level / 2);
 
-    set_offset_x(view_left_offset);
+	float previous_offset_x = get_offset_x();
+	set_offset_x(view_left_offset);
+    float new_offset_x = get_offset_x();
+
+	auto acceptable_margin = GOTO_LEFTRIGHT_SMART_ACCEPTABLE_MARGIN;
+	return ((-(new_offset_x - previous_offset_x)) > acceptable_margin);
+	// returns whether we moved more to the right or not
 }
 
 void DocumentView::goto_right() {
     float page_width = current_document->get_page_width(get_center_page_number());
     float view_left_offset = -(page_width / 2 - view_width / zoom_level / 2);
     set_offset_x(view_left_offset);
+}
+
+bool DocumentView::previous_page_smart() {
+	bool moved_top_p = goto_top_of_page();
+
+	if (! moved_top_p) {
+		bool moved_left_p = goto_left_smart();
+		if (moved_left_p) {
+			// qDebug() << "PreviousPageSmartCommand: Moved left";
+
+			goto_bottom_of_page();
+		} else {
+			// qDebug() << "PreviousPageSmartCommand: already at the left edge; going to the previous page's bottom right corner.";
+
+			if (move_pages(-1)) {
+				goto_right_smart();
+				goto_bottom_of_page();
+			}
+		}
+	}
+}
+
+bool DocumentView::next_page_smart() {
+	bool moved_bottom_p = goto_bottom_of_page();
+
+	if (! moved_bottom_p) {
+		bool moved_right_p = goto_right_smart();
+		if (moved_right_p) {
+			// qDebug() << "NextPageSmartCommand: Moved right";
+
+			goto_top_of_page();
+		} else {
+			// qDebug() << "NextPageSmartCommand: already at the right edge; going to the next page's top left corner.";
+
+			if (move_pages(1)) {
+				goto_left_smart();
+				goto_top_of_page();
+			} else {
+				return false;
+			}
+		}
+	}
 }
 
 float DocumentView::set_zoom_level(float zl, bool should_exit_auto_resize_mode) {
@@ -704,13 +765,17 @@ void DocumentView::get_visible_pages(int window_height, std::vector<int>& visibl
     }
 }
 
-void DocumentView::move_pages(int num_pages) {
-    if (!current_document) return;
+bool DocumentView::move_pages(int num_pages) {
+	if (!current_document) return false;
     int current_page = get_center_page_number();
     if (current_page == -1) {
         current_page = 0;
     }
     move_absolute(0, num_pages * (current_document->get_page_height(current_page) + PAGE_PADDINGS));
+
+	int final_page = get_center_page_number();
+
+	return (final_page != current_page);
 }
 
 void DocumentView::move_screens(int num_screens) {
@@ -1204,13 +1269,23 @@ void DocumentView::rotate() {
     set_offset_y(new_offset);
 }
 
-void DocumentView::goto_top_of_page() {
+bool DocumentView::goto_top_of_page() {
+	float previous_offset_y = get_offset_y();
+
     int current_page = get_center_page_number();
     float offset_y = get_document()->get_accum_page_height(current_page) + static_cast<float>(view_height) / 2.0f / zoom_level;
     set_offset_y(offset_y);
+
+	// qDebug() << "offset_y:" << offset_y << "previous_offset_y:" << previous_offset_y;
+
+	auto acceptable_margin = GOTO_TOPBOTTOM_SMART_ACCEPTABLE_MARGIN;
+	return ((-(offset_y - previous_offset_y)) > acceptable_margin);
+	// returns whether we moved more to the top or not
 }
 
-void DocumentView::goto_bottom_of_page() {
+bool DocumentView::goto_bottom_of_page() {
+	float previous_offset_y = get_offset_y();
+
     int current_page = get_center_page_number();
     float offset_y = get_document()->get_accum_page_height(current_page + 1) - static_cast<float>(view_height) / 2.0f / zoom_level;
 
@@ -1218,6 +1293,12 @@ void DocumentView::goto_bottom_of_page() {
         offset_y = get_document()->get_accum_page_height(current_page) + get_document()->get_page_height(current_page) - static_cast<float>(view_height) / 2.0f / zoom_level;
     }
     set_offset_y(offset_y);
+
+	// qDebug() << "offset_y:" << offset_y << "previous_offset_y:" << previous_offset_y;
+
+	auto acceptable_margin = GOTO_TOPBOTTOM_SMART_ACCEPTABLE_MARGIN;
+	return (((offset_y - previous_offset_y)) > acceptable_margin);
+	// returns whether we moved more to the bottom or not
 }
 
 int DocumentView::get_line_index() {
