@@ -21,6 +21,10 @@
 
 #include <QMap>
 
+#ifdef NIGHT_P
+#include <hiredis/hiredis.h>
+#endif
+
 extern float VERTICAL_MOVE_AMOUNT;
 extern float HORIZONTAL_MOVE_AMOUNT;
 
@@ -403,6 +407,10 @@ public:
 
     // search the `paper_name` in one of the configurable when middle-click or shift+middle-clicking on paper's name
     void handle_search_paper_name(std::wstring paper_name, bool is_shift_pressed);
+
+    #ifdef NIGHT_P
+	bool redisFlagGet(const QString &name);
+    #endif
 
     void persist(bool persist_drawings = false);
     bool is_pending_link_source_filled();
@@ -982,6 +990,12 @@ public:
     void delete_menu_nodes(MenuNode* items);
     void set_pending_portal(std::optional<std::wstring> doc_path, Portal portal);
     void set_pending_portal(std::optional<std::pair<std::optional<std::wstring>, Portal>> pending_portal);
+
+private:
+#ifdef NIGHT_P
+	redisContext *redisContext_; // Member variable to hold the Redis connection
+#endif
+
 };
 
 MainWidget* get_window_with_window_id(int window_id);
