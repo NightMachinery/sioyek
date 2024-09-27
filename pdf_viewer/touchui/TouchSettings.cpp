@@ -26,6 +26,7 @@ extern UIRect PORTRAIT_EDIT_PORTAL_UI_RECT;
 extern UIRect LANDSCAPE_EDIT_PORTAL_UI_RECT;
 extern float DEFAULT_VERTICAL_LINE_COLOR[4];
 extern bool FUZZY_SEARCHING;
+extern bool REGEX_SEARCHING;
 
 TouchSettings::TouchSettings(MainWidget* parent) : QWidget(parent) {
 

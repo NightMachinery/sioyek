@@ -1,7 +1,13 @@
+#include "utils.h"
+
 #include "mysortfilterproxymodel.h"
 #include <string>
 
 #include "rapidfuzz_amalgamated.hpp"
+
+
+extern bool REGEX_SEARCHING;
+
 
 bool MySortFilterProxyModel::filter_accepts_row_column(int row, int col, const QModelIndex& source_parent) const {
     if (filterString.size() == 0 || filterString == "<NULL>") return true;
@@ -19,7 +25,7 @@ bool MySortFilterProxyModel::filter_accepts_row_column(int row, int col, const Q
 bool MySortFilterProxyModel::filterAcceptsRow(int source_row,
     const QModelIndex& source_parent) const
 {
-    if (is_fuzzy) {
+    if (is_fuzzy || REGEX_SEARCHING) {
 
         int key_column = this->filterKeyColumn();
 
@@ -47,7 +53,7 @@ bool MySortFilterProxyModel::filterAcceptsRow(int source_row,
 
 
 void MySortFilterProxyModel::setFilterCustom(const QString& filterString) {
-    if (is_fuzzy) {
+    if (is_fuzzy || REGEX_SEARCHING) {
         this->filterString = filterString;
         this->setFilterFixedString(filterString);
         ensure_scores();
@@ -62,7 +68,11 @@ void MySortFilterProxyModel::setFilterCustom(const QString& filterString) {
 bool MySortFilterProxyModel::lessThan(const QModelIndex& left,
     const QModelIndex& right) const
 {
-    if (is_fuzzy) {
+    if (REGEX_SEARCHING) {
+		// When regex searching is enabled, maintain the original order
+		return left.row() < right.row();
+    }
+    else if (is_fuzzy) {
         int left_score = scores[index_map[left]];
         int right_score = scores[index_map[right]];
         return left_score > right_score;
@@ -77,7 +87,7 @@ MySortFilterProxyModel::MySortFilterProxyModel(bool fuzzy, bool tree) {
     is_tree = tree;
 
     slab = fzf_make_default_slab();
-    if (fuzzy) {
+    if (fuzzy || REGEX_SEARCHING) {
         setDynamicSortFilter(true);
     }
 }
@@ -87,7 +97,16 @@ MySortFilterProxyModel::~MySortFilterProxyModel() {
 }
 
 int MySortFilterProxyModel::compute_score(QString filter_string, QString item_string) const{
-    return static_cast<int>(rapidfuzz::fuzz::partial_ratio(filter_string.toStdWString(), item_string.toStdWString()));
+    int score;
+    if (REGEX_SEARCHING) {
+        score = bool_regex_match(filter_string, item_string) ? 100 : 0;
+    }
+    else {
+        score = calculate_partial_ratio(filter_string.toStdWString(), item_string.toStdWString());
+    }
+
+    return score;
+
 }
 
 int MySortFilterProxyModel::compute_score(fzf_pattern_t* pattern, QString item_string) const{

@@ -117,6 +117,7 @@ extern std::wstring PAPER_SEARCH_URL_PATH;
 extern std::wstring PAPER_SEARCH_TILE_PATH;
 extern std::wstring PAPER_SEARCH_CONTRIB_PATH;
 extern bool FUZZY_SEARCHING;
+extern bool REGEX_SEARCHING;
 extern bool AUTO_RENAME_DOWNLOADED_PAPERS;
 
 extern float VISUAL_MARK_NEXT_PAGE_FRACTION;
