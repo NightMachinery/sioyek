@@ -219,6 +219,17 @@ struct ParseState {
 
 };
 
+class DeleteLastHighlightCommand : public Command {
+public:
+    static inline const std::string cname = "delete_last_highlight";
+    static inline const std::string hname = "Delete the last highlight";
+        DeleteLastHighlightCommand(MainWidget* w) : Command(cname, w) {};
+
+	void perform() {
+		widget->handle_delete_last_highlight();
+	}
+};
+
 class NoopCommand : public Command {
 public:
     static inline const std::string cname = "noop";
@@ -6588,6 +6599,7 @@ CommandManager::CommandManager(ConfigManager* config_manager) {
     register_command<DeletePortalCommand>();
     register_command<DeleteBookmarkCommand>();
     register_command<DeleteHighlightCommand>();
+    register_command<DeleteLastHighlightCommand>();
     register_command<DeleteVisibleBookmarkCommand>();
     register_command<EditVisibleBookmarkCommand>();
     register_command<GotoPortalCommand>();
