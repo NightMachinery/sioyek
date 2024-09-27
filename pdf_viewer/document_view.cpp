@@ -240,6 +240,9 @@ void DocumentView::delete_highlight_with_index(int index) {
 void DocumentView::delete_bookmark_with_index(int index) {
     current_document->delete_bookmark_with_index(index);
 }
+void DocumentView::delete_last_highlight() {
+	current_document->delete_last_highlight();
+}
 
 void DocumentView::delete_highlight(Highlight hl) {
     current_document->delete_highlight(hl);

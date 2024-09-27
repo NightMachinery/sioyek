@@ -630,6 +630,7 @@ public:
     void handle_delete_highlight_under_cursor();
     void handle_delete_selected_highlight();
     void handle_delete_selected_bookmark();
+	void handle_delete_last_highlight();
     void handle_start_reading();
     void handle_toggle_reading();
     void handle_stop_reading();
