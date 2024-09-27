@@ -15,6 +15,13 @@
 #include <qcommandlineparser.h>
 
 #include <qkeyevent.h>
+
+#include <QString>
+#include <QStringList>
+#include <QRegularExpression>
+
+#include <QDebug>
+
 #include <qstandarditemmodel.h>
 #include <qpoint.h>
 #include <qjsonarray.h>
@@ -35,7 +42,20 @@ struct JsCommandInfo {
     std::optional<std::wstring> entry_point;
 };
 
-std::wstring to_lower(const std::wstring& inp);
+// std::wstring to_lower(const std::wstring& inp);
+template <typename CharT>
+std::basic_string<CharT> to_lower(const std::basic_string<CharT>& input);
+
+template <typename CharT>
+bool is_all_lower(const std::basic_string<CharT>& input);
+
+template <typename StringType>
+int calculate_partial_ratio(const StringType& filterString, const StringType& key, bool smart_case_p = true);
+
+// Explicit template instantiation declarations for std::wstring and std::string
+extern template int calculate_partial_ratio<std::string>(const std::string&, const std::string&, bool);
+extern template int calculate_partial_ratio<std::wstring>(const std::wstring&, const std::wstring&, bool);
+
 bool is_separator(fz_stext_char* last_char, fz_stext_char* current_char);
 void get_flat_toc(const std::vector<TocNode*>& roots, std::vector<std::wstring>& output, std::vector<int>& pages);
 int mod(int a, int b);
@@ -445,6 +465,8 @@ QString get_status_font_face_name();
 std::vector<fz_stext_char*> reorder_stext_line(fz_stext_line* line);
 std::vector<fz_stext_char*> reorder_mixed_stext_line(fz_stext_line* line);
 bool should_trigger_delete(QKeyEvent *key_event);
+bool match_patterns(const QString& key, const QStringList& patterns);
+bool bool_regex_match(const QString& search_text, const QString& key);
 
 class TextToSpeechHandler {
 public:

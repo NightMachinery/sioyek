@@ -39,6 +39,15 @@
 #include <QtCore/private/qandroidextras_p.h>
 #include <qjniobject.h>
 #endif
+#include <QKeyEvent>
+#include <QtGlobal>
+
+#include "rapidfuzz_amalgamated.hpp"
+
+#include <cctype>
+
+#include <algorithm>
+#include <locale>
 
 #include <mupdf/pdf.h>
 
@@ -81,12 +90,13 @@ extern QString global_font_family;
 #endif
 
 
-std::wstring to_lower(const std::wstring& inp) {
-    std::wstring res;
-    for (char c : inp) {
-        res.push_back(::tolower(c));
-    }
-    return res;
+template <typename CharT>
+std::basic_string<CharT> to_lower(const std::basic_string<CharT>& input) {
+    std::basic_string<CharT> output = input;
+    std::locale loc;
+    std::transform(output.begin(), output.end(), output.begin(),
+                   [&loc](CharT c) { return std::tolower(c, loc); });
+    return output;
 }
 
 std::wstring get_path_extras_file_name(const std::wstring& path_) {
@@ -122,6 +132,19 @@ void get_path_epub_size(const std::wstring& path, float* out_width, float* out_h
     *out_width = width;
     *out_height = height;
 }
+// std::wstring to_lower(const std::wstring& input) {
+//     std::wstring output = input;
+//     std::transform(output.begin(), output.end(), output.begin(),
+//                    [](wchar_t c) { return std::tolower(c, std::locale()); });
+//     return output;
+// }
+
+// std::string to_lower(const std::string& input) {
+//     std::string output = input;
+//     std::transform(output.begin(), output.end(), output.begin(),
+//                    [](char c) { return std::tolower(c, std::locale()); });
+//     return output;
+// }
 
 void get_flat_toc(const std::vector<TocNode*>& roots, std::vector<std::wstring>& output, std::vector<int>& pages) {
     // Enumerate ToC nodes in DFS order
@@ -4216,7 +4239,60 @@ bool should_trigger_delete(QKeyEvent *key_event) {
 #endif
 
     return false;
+}
 
+
+// Template function to check if a string is all lowercase
+template <typename CharT>
+bool is_all_lower(const std::basic_string<CharT>& input) {
+    std::locale loc;
+    return std::all_of(input.begin(), input.end(), [&loc](CharT c) {
+        return std::islower(c, loc) || !std::isalpha(c, loc);
+    });
+}
+
+// Template function for calculate_partial_ratio
+template <typename StringType>
+int calculate_partial_ratio(const StringType& filterString, const StringType& key, bool smart_case_p) {
+    StringType s1 = filterString;
+    StringType s2 = key;
+
+    // Convert strings to lowercase if smart_case_p is true and filterString is all lowercase
+    if (smart_case_p && is_all_lower(s1)) {
+        s1 = to_lower(s1);
+        s2 = to_lower(s2);
+    }
+
+    // Calculate the partial ratio score
+    // Ensure that rapidfuzz::fuzz::partial_ratio can handle StringType
+    int score = static_cast<int>(rapidfuzz::fuzz::partial_ratio(s1, s2));
+
+    return score;
+}
+
+// Explicit template instantiation for std::wstring and std::string
+template int calculate_partial_ratio<std::string>(const std::string&, const std::string&, bool);
+template int calculate_partial_ratio<std::wstring>(const std::wstring&, const std::wstring&, bool);
+
+bool match_patterns(const QString& key, const QStringList& patterns) {
+    for (const QString &pattern : patterns) {
+        bool has_upper_case = std::any_of(pattern.begin(), pattern.end(), [](QChar c) { return c.isUpper(); });
+        QRegularExpression::PatternOptions options = has_upper_case ? QRegularExpression::NoPatternOption
+            : QRegularExpression::CaseInsensitiveOption;
+        QRegularExpression regex(pattern, options);
+
+        if (!regex.match(key).hasMatch()) {
+            return false; // If any pattern does not match, reject the string
+        }
+    }
+    return true; // All patterns matched
+}
+
+bool bool_regex_match(const QString& search_text, const QString& key) {
+    if (search_text.isEmpty()) return true;
+
+    QStringList patterns = search_text.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+    return match_patterns(key, patterns);
 }
 
 QString get_ui_font_face_name() {
