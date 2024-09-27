@@ -3050,6 +3050,13 @@ void MainWidget::wheelEvent(QWheelEvent* wevent) {
     bool is_visual_mark_mode = main_document_view->is_ruler_mode() && visual_scroll_mode;
     bool scroll_horizontally_p = is_shift_pressed;
 
+    #ifdef NIGHT_P
+    bool is_esc_pressed = isKeyPressed(Qt::Key_Escape);
+    bool is_x_pressed = isKeyPressed(Qt::Key_X);
+
+    scroll_horizontally_p = is_shift_pressed || is_esc_pressed || is_x_pressed;
+    #endif
+
 
 #ifdef SIOYEK_QT6
     int x = wevent->position().x();
