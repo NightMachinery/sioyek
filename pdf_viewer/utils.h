@@ -19,6 +19,8 @@
 #include <QString>
 #include <QStringList>
 #include <QRegularExpression>
+#include <QSet>
+#include <QFileInfo>
 
 #include <QDebug>
 
@@ -154,6 +156,14 @@ void check_for_updates(QWidget* parent, std::string current_version);
 char* get_argv_value(int argc, char** argv, std::string key);
 void split_root_file(QString path, QString& out_root, QString& out_partial);
 QString expand_home_dir(QString path);
+
+// document extensions used to filter the embedded file selector and the native
+// open-document dialogs (configured via `file_selector_extensions`).
+// an empty configuration means "accept every file".
+QStringList get_file_selector_extension_list();
+QSet<QString> get_file_selector_extension_set();
+bool is_supported_document_file(const QFileInfo& file_info, const QSet<QString>& extensions);
+QString get_document_file_dialog_filter();
 std::vector<unsigned int> get_max_width_histogram_from_pixmap(fz_pixmap* pixmap);
 //std::vector<unsigned int> get_line_ends_from_histogram(std::vector<unsigned int> histogram);
 void get_line_begins_and_ends_from_histogram(std::vector<unsigned int> histogram, std::vector<unsigned int>& begins, std::vector<unsigned int>& ends);

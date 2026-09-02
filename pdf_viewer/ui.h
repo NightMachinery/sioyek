@@ -696,12 +696,13 @@ public:
             );
         QStringList result {};
         QString sep = QDir::separator();
+        QSet<QString> allowed_extensions = get_file_selector_extension_set();
 
         for (const auto& entry : entry_list) {
             if (entry.isDir()) {
                 result.push_back(entry.fileName() + sep);
             }
-            else {
+            else if (is_supported_document_file(entry, allowed_extensions)) {
                 result.push_back(entry.fileName());
             }
         }
@@ -711,6 +712,9 @@ public:
             std::vector<std::pair<QString, int>> file_scores;
 
             for (const auto& file : all_directory_files) {
+                if ((!file.isDir()) && (!is_supported_document_file(file, allowed_extensions))) {
+                    continue;
+                }
                 std::string encoded_file = utf8_encode(file.fileName().toStdWString());
                 int score = 0;
                 if (REGEX_SEARCHING) {

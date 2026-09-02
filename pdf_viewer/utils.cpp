@@ -82,6 +82,7 @@ extern std::wstring PAPER_SEARCH_TILE_PATH;
 extern std::wstring PAPER_SEARCH_CONTRIB_PATH;
 extern std::wstring UI_FONT_FACE_NAME;
 extern std::wstring STATUS_FONT_FACE_NAME;
+extern std::wstring FILE_SELECTOR_EXTENSIONS;
 extern bool OPEN_LAST_FILE_ON_STARTUP;
 
 extern bool VERBOSE;
@@ -2152,6 +2153,51 @@ QString expand_home_dir(QString path) {
         }
     }
     return path;
+}
+
+QStringList get_file_selector_extension_list() {
+    QString raw = QString::fromStdWString(FILE_SELECTOR_EXTENSIONS);
+    QStringList result;
+
+    for (const QString& part : raw.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts)) {
+        QString extension = part.trimmed().toLower();
+        while (extension.startsWith('*')) {
+            extension = extension.mid(1);
+        }
+        while (extension.startsWith('.')) {
+            extension = extension.mid(1);
+        }
+        if (extension.size() > 0 && !result.contains(extension)) {
+            result.push_back(extension);
+        }
+    }
+    return result;
+}
+
+QSet<QString> get_file_selector_extension_set() {
+    QStringList extension_list = get_file_selector_extension_list();
+    return QSet<QString>(extension_list.begin(), extension_list.end());
+}
+
+bool is_supported_document_file(const QFileInfo& file_info, const QSet<QString>& extensions) {
+    if (extensions.isEmpty()) {
+        // empty configuration means no filtering at all
+        return true;
+    }
+    return extensions.contains(file_info.suffix().toLower());
+}
+
+QString get_document_file_dialog_filter() {
+    QStringList extension_list = get_file_selector_extension_list();
+    if (extension_list.size() == 0) {
+        return "Any (*)";
+    }
+
+    QStringList patterns;
+    for (const QString& extension : extension_list) {
+        patterns.push_back("*." + extension);
+    }
+    return "Documents (" + patterns.join(" ") + ")";
 }
 
 void split_root_file(QString path, QString& out_root, QString& out_partial) {
