@@ -1579,6 +1579,10 @@ bool BaseSelectorWidget::on_right_key() {
     return false;
 }
 
+bool BaseSelectorWidget::handles_horizontal_keys() {
+    return false;
+}
+
 void BaseSelectorWidget::set_filter_column_index(int index) {
     proxy_model->setFilterKeyColumn(index);
 }
@@ -1637,10 +1641,23 @@ bool BaseSelectorWidget::eventFilter(QObject* obj, QEvent* event) {
                 key_event->key() == Qt::Key_Left ||
                 key_event->key() == Qt::Key_Right
                 ) {
-                if (!line_edit->hasSelectedText()){
-                    bool is_horizontal = (key_event->key() == Qt::Key_Left) || (key_event->key() == Qt::Key_Right);
-                    bool has_modifiers = (key_event->modifiers() & ~Qt::KeypadModifier) != Qt::NoModifier;
+                bool is_horizontal = (key_event->key() == Qt::Key_Left) || (key_event->key() == Qt::Key_Right);
+                Qt::KeyboardModifiers modifiers = key_event->modifiers() & ~Qt::KeypadModifier;
+                bool has_modifiers = modifiers != Qt::NoModifier;
 
+                if (is_horizontal && (modifiers == Qt::ShiftModifier) && handles_horizontal_keys()) {
+                    // the plain arrow keys are used for navigation, so Shift+arrow takes over
+                    // their usual role of moving the cursor (without selecting text)
+                    if (key_event->key() == Qt::Key_Left) {
+                        line_edit->cursorBackward(false);
+                    }
+                    else {
+                        line_edit->cursorForward(false);
+                    }
+                    return true;
+                }
+
+                if (!line_edit->hasSelectedText()){
                     if (is_horizontal && (!has_modifiers)) {
                         bool handled = (key_event->key() == Qt::Key_Left) ? on_left_key() : on_right_key();
                         if (handled) {

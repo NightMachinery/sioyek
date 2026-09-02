@@ -147,6 +147,9 @@ protected:
     // (in which case the key event is consumed and not forwarded to the line edit)
     virtual bool on_left_key();
     virtual bool on_right_key();
+    // when true, Shift+Left/Right move the line-edit cursor without selecting text
+    // (a replacement for the plain arrow keys that the selector consumes)
+    virtual bool handles_horizontal_keys();
 
     virtual QString get_view_stylesheet_type_name() = 0;
 
@@ -800,6 +803,10 @@ public:
         else {
             navigate_to_directory(full_path);
         }
+    }
+
+    virtual bool handles_horizontal_keys() {
+        return true;
     }
 
     // left arrow key: go up one directory, remembering the directory we came from
