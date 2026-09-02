@@ -23,6 +23,7 @@
 #include "sqlite3.h"
 #include "checksum.h"
 #include "database.h"
+#include "utf8/checked.h"
 #include "utils.h"
 
 extern bool SHOULD_RENDER_PDF_ANNOTATIONS;
@@ -58,6 +59,8 @@ extern std::wstring SHARED_DATABASE_PATH;
 extern bool DEBUG;
 extern bool EXACT_HIGHLIGHT_SELECT;
 extern std::wstring ANNOTATIONS_DIR_PATH;
+extern bool LIGHTEN_COLORS_WHEN_EMBEDDING_ANNOTATIONS;
+extern bool USE_PAGE_LABELS_IN_TABLE_OF_CONTENTS;
 
 int Document::get_mark_index(char symbol) {
     for (size_t i = 0; i < marks.size(); i++) {
@@ -710,6 +713,16 @@ float Document::get_page_width(int page_index) {
     }
 }
 
+float Document::get_page_width_median() {
+    if (page_widths.size() == 0) {
+        return 500.0f;
+    }
+
+    std::vector<float> sorted_widths = page_widths;
+    std::nth_element(sorted_widths.begin(), sorted_widths.begin() + sorted_widths.size() / 2, sorted_widths.end());
+    return sorted_widths[sorted_widths.size() / 2];
+}
+
 float Document::get_page_size_smart(bool width, int page_index, float* left_ratio, float* right_ratio, int* normal_page_width) {
 
     fz_pixmap* pixmap = get_small_pixmap(page_index);
@@ -819,32 +832,39 @@ void Document::create_toc_tree(std::vector<TocNode*>& toc) {
 void Document::convert_toc_tree(fz_outline* root, std::vector<TocNode*>& output) {
     // convert an fz_outline structure to a tree of TocNodes
 
-    std::vector<int> accum_chapter_pages;
-    count_chapter_pages_accum(accum_chapter_pages);
+    try {
+        std::vector<int> accum_chapter_pages;
+        count_chapter_pages_accum(accum_chapter_pages);
+        do {
+            if (root == nullptr || root->title == nullptr) {
+                break;
+            }
 
-    do {
-        if (root == nullptr || root->title == nullptr) {
-            break;
-        }
-
-        TocNode* current_node = new TocNode;
-        current_node->title = utf8_decode(root->title);
-        current_node->x = root->x;
-        current_node->y = root->y;
-        if (root->page.page == -1) {
-            float xp, yp;
-            fz_location loc = fz_resolve_link(context, doc, root->uri, &xp, &yp);
-            int chapter_page = accum_chapter_pages[loc.chapter];
-            current_node->page = chapter_page + loc.page;
-        }
-        else {
-            current_node->page = root->page.page;
-        }
-        convert_toc_tree(root->down, current_node->children);
+                TocNode* current_node = new TocNode;
+                current_node->title = utf8_decode(root->title);
+                current_node->x = root->x;
+                current_node->y = root->y;
+            if (root->page.page == -1) {
+                float xp, yp;
+                fz_location loc = fz_resolve_link(context, doc, root->uri, &xp, &yp);
+                int chapter_page = 0;
+                if (loc.chapter >= 0 && loc.chapter < accum_chapter_pages.size()) {
+                    chapter_page = accum_chapter_pages[loc.chapter];
+                }
+                current_node->page = chapter_page + loc.page;
+            }
+            else {
+                current_node->page = root->page.page;
+            }
+            convert_toc_tree(root->down, current_node->children);
 
 
-        output.push_back(current_node);
-    } while ((root = root->next));
+            output.push_back(current_node);
+        } while ((root = root->next));
+    }
+    catch(utf8::exception& e) {
+        std::cerr << "could not convert toc node: " << e.what() << std::endl;
+    }
 }
 
 PdfLink Document::merge_links(const std::vector<PdfLink>& links_to_merge) {
@@ -1109,6 +1129,9 @@ void Document::load_page_dimensions(bool force_load_now) {
                 fz_page* page = fz_load_page(context_, doc_, i);
                 fz_page_label(context_, page, label_buffer, N);
                 page_labels_.push_back(utf8_decode(label_buffer));
+                if (page_labels_.back().size() == 0) {
+                    page_labels_.back() = std::to_wstring(i + 1);
+                }
                 PagelessDocumentRect page_rect = fz_bound_page(context_, page);
 
                 float page_height = page_rect.y1 - page_rect.y0;
@@ -1334,7 +1357,12 @@ DocumentPos Document::absolute_to_page_pos_uncentered(AbsoluteDocumentPos absolu
 
 QStandardItemModel* Document::get_toc_model() {
     if (!cached_toc_model) {
-        cached_toc_model = get_model_from_toc(get_toc());
+        if (USE_PAGE_LABELS_IN_TABLE_OF_CONTENTS){
+            cached_toc_model = get_model_from_toc(get_toc(), page_labels);
+        }
+        else{
+            cached_toc_model = get_model_from_toc(get_toc(), {});
+        }
     }
     return cached_toc_model;
 }
@@ -1613,7 +1641,7 @@ std::optional<std::pair<std::wstring, std::wstring>> Document::get_generic_link_
     std::pair<int,
     int>* out_range) {
 
-    std::wregex regex(L"[a-zA-Z]{3,}(\.){0,1}[ \t]+[0-9]+(\.[0-9]+)*");
+    std::wregex regex(L"[a-zA-Z]{3,}(\\.){0,1}[ \t]+[0-9]+(\\.[0-9]+)*");
     std::optional<std::wstring> match_string = get_regex_match_at_position(regex, flat_chars, position, out_range);
     if (match_string) {
         std::vector<std::wstring> parts = split_whitespace(match_string.value());
@@ -1861,6 +1889,69 @@ std::wstring Document::get_raw_text_selection(AbsoluteDocumentPos selection_begi
 
 }
 
+void Document::get_line_selection(AbsoluteDocumentPos selection_begin,
+    AbsoluteDocumentPos selection_end,
+    std::deque<AbsoluteRect>& selected_characters,
+    std::wstring& selected_text) {
+
+    selected_characters.clear();
+    selected_text.clear();
+
+    DocumentPos begin_doc_pos = selection_begin.to_document(this);
+    DocumentPos end_doc_pos = selection_end.to_document(this);
+
+    bool begun = false;
+
+    fz_point begin_fz_point = { begin_doc_pos.x, begin_doc_pos.y };
+    fz_point end_fz_point = { end_doc_pos.x, end_doc_pos.y };
+
+    fz_stext_page* begin_page = get_stext_with_page_number(begin_doc_pos.page);
+    fz_stext_page* end_page = get_stext_with_page_number(end_doc_pos.page);
+
+    int begin_index, end_index;
+    fz_stext_line* closest_line_to_begin = find_closest_line_to_document_point(begin_page, begin_fz_point, &begin_index);
+    fz_stext_line* closest_line_to_end = find_closest_line_to_document_point(end_page, end_fz_point, &end_index);
+
+    if ((begin_page == end_page && begin_index > end_index)) {
+        std::swap(closest_line_to_begin, closest_line_to_end);
+    }
+    else if (begin_page > end_page){
+        std::swap(closest_line_to_begin, closest_line_to_end);
+        std::swap(begin_doc_pos, end_doc_pos);
+    }
+
+    for (int page_number = begin_doc_pos.page; page_number <= end_doc_pos.page; page_number++) {
+
+
+        fz_stext_page* stext_page = get_stext_with_page_number(page_number);
+
+        if (closest_line_to_begin == nullptr || closest_line_to_end == nullptr) return;
+
+        LL_ITER(block, stext_page->first_block) {
+            if (block->type == FZ_STEXT_BLOCK_TEXT) {
+                LL_ITER(line, block->u.t.first_line) {
+                    if (line == closest_line_to_begin) {
+                        begun = true;
+                    }
+
+                    if (begun) {
+                        for (fz_stext_char* chr = line->first_char; chr; chr = chr->next) {
+                            selected_characters.push_back(to_absolute(page_number, chr->quad));
+                            selected_text.push_back(chr->c);
+                        }
+                    }
+
+                    if (line == closest_line_to_end) {
+                        return;
+                    }
+                }
+            }
+        }
+
+    }
+
+}
+
 void Document::get_text_selection(fz_context* ctx, AbsoluteDocumentPos selection_begin,
     AbsoluteDocumentPos selection_end,
     bool is_word_selection,
@@ -1927,7 +2018,7 @@ void Document::get_text_selection(fz_context* ctx, AbsoluteDocumentPos selection
             char_end = find_closest_char_to_document_point(flat_chars, page_point2, &location_index2);
         }
 
-        if (char_begin == char_end && (char_begin != nullptr)) {
+        if (char_begin == char_end && (!is_word_selection) && (char_begin != nullptr)) {
             selected_text.push_back(char_begin->c);
             selected_characters.push_back(to_absolute(i, char_begin->quad));
             return;
@@ -2187,6 +2278,180 @@ void Document::import_annotations() {
     }
 }
 
+struct PdfOutlineResult {
+    pdf_obj* first = nullptr;
+    pdf_obj* last = nullptr;
+    int count = 0;
+};
+
+PdfOutlineResult build_pdf_outline_tree(
+    fz_context* ctx,
+    pdf_document* pdf_doc,
+    pdf_obj* parent_dict,
+    const std::vector<TocNode*>& nodes,
+    int page_count)
+{
+    PdfOutlineResult result;
+    if (nodes.empty()) {
+        return result;
+    }
+
+    pdf_obj* prev_obj = nullptr;
+
+    for (TocNode* node : nodes) {
+        if (!node) continue;
+
+        pdf_obj* item_dict = pdf_add_new_dict(ctx, pdf_doc, 8);
+
+        // Set /Parent
+        pdf_dict_put(ctx, item_dict, PDF_NAME(Parent), parent_dict);
+
+        // Set /Title
+        std::string title_utf8 = utf8_encode(node->title);
+        pdf_dict_put_text_string(ctx, item_dict, PDF_NAME(Title), title_utf8.c_str());
+
+        // Set /Dest
+        if (node->page >= 0 && node->page < page_count) {
+            pdf_obj* page_obj = pdf_lookup_page_obj(ctx, pdf_doc, node->page);
+            if (page_obj) {
+                fz_matrix page_ctm;
+                pdf_page_obj_transform(ctx, page_obj, nullptr, &page_ctm);
+                fz_point destination = fz_transform_point_xy(node->x, node->y, page_ctm);
+
+                pdf_obj* dest = pdf_new_array(ctx, pdf_doc, 5);
+                pdf_array_push(ctx, dest, page_obj);
+                pdf_array_push(ctx, dest, PDF_NAME(XYZ));
+                pdf_array_push_real(ctx, dest, destination.x);
+                pdf_array_push_real(ctx, dest, destination.y);
+                pdf_array_push(ctx, dest, PDF_NULL);
+                pdf_dict_put_drop(ctx, item_dict, PDF_NAME(Dest), dest);
+            }
+        }
+
+        // Recursively build children
+        PdfOutlineResult child_res = build_pdf_outline_tree(ctx, pdf_doc, item_dict, node->children, page_count);
+        if (child_res.first) {
+            pdf_dict_put(ctx, item_dict, PDF_NAME(First), child_res.first);
+            pdf_dict_put(ctx, item_dict, PDF_NAME(Last), child_res.last);
+            pdf_dict_put_int(ctx, item_dict, PDF_NAME(Count), child_res.count);
+            pdf_drop_obj(ctx, child_res.first);
+        }
+
+        // Link with previous sibling
+        if (prev_obj) {
+            pdf_dict_put(ctx, prev_obj, PDF_NAME(Next), item_dict);
+            pdf_dict_put(ctx, item_dict, PDF_NAME(Prev), prev_obj);
+            pdf_drop_obj(ctx, item_dict);
+        } else {
+            result.first = item_dict;
+        }
+
+        result.last = item_dict;
+        result.count += 1 + child_res.count;
+
+        prev_obj = item_dict;
+    }
+
+    return result;
+}
+
+QJsonObject json_object_from_toc_node(const TocNode* node){
+
+    if (node == nullptr) {
+        return QJsonObject();
+    }
+
+    QJsonObject result;
+    result["page"] = node->page;
+    result["title"] = QString::fromStdWString(node->title);
+    result["x"] = node->x;
+    result["y"] = node->y;
+
+    if (node->children.size() > 0){
+        QJsonArray children;
+
+        for (const TocNode* child : node->children) {
+            children.append(json_object_from_toc_node(child));
+        }
+
+        result["children"] = children;
+    }
+
+    return result;
+}
+
+void Document::export_generated_toc(std::wstring new_file_path) {
+    QJsonDocument doc;
+
+    QJsonArray top_level_objects;
+    for (const TocNode* node : created_top_level_toc_nodes) {
+        top_level_objects.append(json_object_from_toc_node(node));
+    }
+    doc.setArray(top_level_objects);
+
+    QFile json_file(QString::fromStdWString(new_file_path));
+    if (json_file.open(QFile::WriteOnly)){
+        json_file.write(doc.toJson());
+        json_file.close();
+    }
+}
+
+void Document::embed_generated_toc(std::wstring new_file_path) {
+    pdf_document* pdf_doc = pdf_specifics(context, doc);
+    if (pdf_doc == nullptr || created_top_level_toc_nodes.empty()) {
+        return;
+    }
+
+    std::string new_file_path_utf8 = utf8_encode(new_file_path);
+    fz_output* output_file = nullptr;
+    pdf_obj* outlines_dict = nullptr;
+
+    fz_try(context) {
+        output_file = fz_new_output_with_path(context, new_file_path_utf8.c_str(), 0);
+
+        pdf_obj* trailer = pdf_trailer(context, pdf_doc);
+        pdf_obj* root = pdf_dict_get(context, trailer, PDF_NAME(Root));
+        if (root == nullptr) {
+            fz_throw(context, FZ_ERROR_FORMAT, "PDF has no catalog");
+        }
+
+        outlines_dict = pdf_add_new_dict(context, pdf_doc, 4);
+        pdf_dict_put(context, outlines_dict, PDF_NAME(Type), PDF_NAME(Outlines));
+
+        PdfOutlineResult top_res = build_pdf_outline_tree(
+            context,
+            pdf_doc,
+            outlines_dict,
+            created_top_level_toc_nodes,
+            pdf_count_pages(context, pdf_doc));
+        if (top_res.first) {
+            pdf_dict_put(context, outlines_dict, PDF_NAME(First), top_res.first);
+            pdf_dict_put(context, outlines_dict, PDF_NAME(Last), top_res.last);
+            pdf_dict_put_int(context, outlines_dict, PDF_NAME(Count), top_res.count);
+            pdf_drop_obj(context, top_res.first);
+        }
+
+        // Assigning this key replaces any outline already present in the PDF.
+        pdf_dict_put(context, root, PDF_NAME(Outlines), outlines_dict);
+
+        pdf_write_options pwo{};
+        pdf_write_document(context, pdf_doc, output_file, &pwo);
+    }
+    fz_always(context) {
+        if (outlines_dict) {
+            pdf_drop_obj(context, outlines_dict);
+        }
+        if (output_file) {
+            fz_close_output(context, output_file);
+            fz_drop_output(context, output_file);
+        }
+    }
+    fz_catch(context) {
+        show_error_message(L"Could not embed the generated table of contents. Make sure the output file is writable.");
+    }
+}
+
+
 void Document::embed_annotations(std::wstring new_file_path) {
 
     std::unordered_map<int, fz_page*> cached_pages;
@@ -2259,9 +2524,16 @@ void Document::embed_annotations(std::wstring new_file_path) {
         }
         float* color_ = get_highlight_type_color(highlight.type);
         float color[3];
-        // lighten highlight colors before embedding (because we use alpha to make it lighter but
-        // the color doesn't take it into accout). Also see: https://github.com/ahrm/sioyek/issues/667
-        lighten_color(color_, color);
+        if (LIGHTEN_COLORS_WHEN_EMBEDDING_ANNOTATIONS) {
+            // lighten highlight colors before embedding (because we use alpha to make it lighter but
+            // the color doesn't take it into accout). Also see: https://github.com/ahrm/sioyek/issues/667
+            lighten_color(color_, color);
+        }
+        else {
+            color[0] = color_[0];
+            color[1] = color_[1];
+            color[2] = color_[2];
+        }
 
         pdf_set_annot_color(context, highlight_annot, 3, color);
         if (highlight.text_annot.size() > 0) {
@@ -2742,6 +3014,7 @@ AbsoluteRect Document::get_ith_next_line_from_absolute_y(int page, int line_inde
     }
 
     int new_index = line_index + i;
+
     if ((new_index >= 0) && ((size_t)new_index < line_rects.size())) {
         *out_page = page;
         *out_index = new_index;
@@ -2795,7 +3068,7 @@ const std::vector<AbsoluteRect>& Document::get_page_lines(
     }
     else {
         fz_stext_page* stext_page = get_stext_with_page_number(page);
-        if (stext_page && stext_page->first_block && (!FORCE_CUSTOM_LINE_ALGORITHM)) {
+        if (stext_page && stext_page_has_lines(stext_page) && (!FORCE_CUSTOM_LINE_ALGORITHM)) {
 
             PagelessDocumentRect bound = get_page_absolute_rect(page);
 
@@ -2840,7 +3113,8 @@ const std::vector<AbsoluteRect>& Document::get_page_lines(
         }
         else {
             fz_pixmap* pixmap = get_small_pixmap(page);
-            if (pixmap == nullptr) return {};
+            static const std::vector<AbsoluteRect> empty = {};
+            if (pixmap == nullptr) return empty;
             std::vector<unsigned int> hist = get_max_width_histogram_from_pixmap(pixmap);
             std::vector<unsigned int> line_locations;
             std::vector<unsigned int> line_locations_begins;
@@ -3997,22 +4271,41 @@ std::optional<DocumentPos> Document::find_abbreviation(std::wstring abbr, std::v
         while (index > 0 && is_in(super_fast_search_index[index], {' ', '(', ')', '\n'})){
             index--;
         }
-        std::wstring remaining_abbr = abbr;
+
+        // remaining_abbr = abbr with dots removed
+        std::wstring remaining_abbr;
+        for (int i = 0; i < abbr.size(); i++) {
+            if (abbr[i] != '.') {
+                remaining_abbr.push_back(abbr[i]);
+            }
+        }
+        // if the abbreviation ends with a plural s, remove it
+        if (remaining_abbr.size() > 0 && remaining_abbr.back() == 's') {
+            remaining_abbr.pop_back();
+        }
 
         std::deque<PagelessDocumentRect> raw_rects;
         std::vector<PagelessDocumentRect> merged_rects;
         CachedPageIndex& abbr_page_index = get_page_index(abbr_page);
 
         while (index > 0 && remaining_abbr.size() > 0){
-            if (super_fast_search_index[index] == ' ' || super_fast_search_index[index] == '\n') {
-                //if (QChar(super_fast_search_index[index+1]).toLower() == QChar(remaining_abbr.back()).toLower()){
+            if (
+                super_fast_search_index[index] == ' ' ||
+                super_fast_search_index[index] == '\n' ||
+                super_fast_search_index[index] == '-' ||
+                (super_fast_search_index[index] > 127)
+                ) {
+                if (QChar(super_fast_search_index[index+1]).toLower() == QChar(remaining_abbr.back()).toLower()){
                     remaining_abbr.pop_back();
                     if (remaining_abbr.size() == 0) {
                         break;
                     }
-                //}
+                }
             }
 
+            if (index - super_fast_page_begin_indices[abbr_page] < 0) {
+                break;
+            }
             PagelessDocumentRect rect = abbr_page_index.rects[index - super_fast_page_begin_indices[abbr_page]];
             /* overview_highlight_rects.push_back(DocumentRect(rect, super_fast_search_index_pages[index])); */
             raw_rects.push_back(rect);
@@ -4037,7 +4330,7 @@ std::optional<DocumentPos> Document::find_abbreviation(std::wstring abbr, std::v
 
 int Document::find_reference_page_with_reference_text(std::wstring ref) {
 
-    QStringList parts = QString::fromStdWString(ref).split(QRegularExpression("[ \w\(\);,]"));
+    QStringList parts = QString::fromStdWString(ref).split(QRegularExpression("[ \\w\\(\\);,]"));
     QString largest_part = "";
     for (int i = 0; i < parts.size(); i++) {
         if (parts.at(i).size() > largest_part.size() ) {
@@ -4413,3 +4706,31 @@ std::wstring Document::get_detected_paper_name_if_exists() {
     return detected_paper_name;
 }
 
+
+std::wstring& Document::get_super_fast_search_index() {
+    return super_fast_search_index;
+}
+
+std::vector<int>& Document::get_super_fast_search_page_indices() {
+    return super_fast_page_begin_indices;
+}
+
+
+fz_stext_char* Document::get_next_char_after_selection(int page_number, fz_point document_point){
+    fz_stext_page* stext_page = get_stext_with_page_number(context, page_number, doc);
+
+    std::vector<fz_stext_char*> flat_chars;
+    get_flat_chars_from_stext_page(stext_page, flat_chars);
+
+// fz_stext_char* find_closest_char_to_document_point(const std::vector<fz_stext_char*> flat_chars, fz_point document_point, int* location_index) {
+    int location_index = -1;
+    fz_stext_char* char_begin = find_closest_char_to_document_point(flat_chars, document_point, &location_index);
+    if (char_begin) {
+
+        if (location_index + 1 < flat_chars.size()) {
+            fz_stext_char* next_char = flat_chars[location_index + 1];
+            return next_char;
+        }
+    }
+    return nullptr;
+}

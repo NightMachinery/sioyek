@@ -4,6 +4,7 @@
 #include <mupdf/fitz.h>
 #include <qopengl.h>
 #include <algorithm>
+#include <cmath>
 
 class Document;
 class DocumentView;
@@ -294,7 +295,7 @@ struct Vec {
         for (int i = 0; i < dim; i++) {
             norm_squared += values[i] * values[i];
         }
-        return sqrt(norm_squared);
+        return std::sqrt(norm_squared);
     }
 
     NormalizedWindowPos to_normalized_window_pos() {
@@ -340,7 +341,14 @@ Vec<T, dim> operator-(const Vec<T, dim>& lhs, const Vec<T, dim>& rhs) {
     return res;
 }
 
+
+struct VirtualPos {
+    float x;
+    float y;
+};
+
 fvec2 operator-(const AbsoluteDocumentPos& lhs, const AbsoluteDocumentPos& rhs);
+fvec2 operator-(const VirtualPos& lhs, const VirtualPos& rhs);
 fvec2 operator-(const DocumentPos& lhs, const DocumentPos& rhs);
 fvec2 operator-(const NormalizedWindowPos& lhs, const NormalizedWindowPos& rhs);
 ivec2 operator-(const WindowPos& lhs, const WindowPos& rhs);
@@ -351,11 +359,6 @@ AbsoluteDocumentPos operator-(const AbsoluteDocumentPos& lhs, const fvec2& rhs);
 DocumentPos operator+(const DocumentPos& lhs, const fvec2& rhs);
 NormalizedWindowPos operator+(const NormalizedWindowPos& lhs, const fvec2& rhs);
 WindowPos operator+(const WindowPos& lhs, const ivec2& rhs);
-
-struct VirtualPos {
-    float x;
-    float y;
-};
 
 VirtualPos operator+(const VirtualPos& lhs, const fvec2& rhs);
 

@@ -67,6 +67,22 @@ enum class DrawingMode {
     None
 };
 
+enum class SelectionMode {
+    Character,
+    Word,
+    Line
+};
+
+enum class SioyekVisibleObjectType {
+    Highlight,
+    Bookmark
+};
+
+struct SioyekVisibleObjectIndex {
+    SioyekVisibleObjectType type;
+    int index;
+};
+
 struct MenuNode {
     QString name;
     QString doc;
@@ -86,6 +102,11 @@ struct BookmarkMoveData {
     AbsoluteDocumentPos initial_begin_position;
     AbsoluteDocumentPos initial_end_position;
     AbsoluteDocumentPos initial_mouse_position;
+};
+
+struct FixedVelocityState {
+    float velocity_y;
+    float velocity_x;
 };
 
 
@@ -117,6 +138,11 @@ struct FreehandDrawingMoveData {
     AbsoluteDocumentPos initial_mouse_position;
 };
 
+struct ClickSpaceTime {
+    QDateTime click_time;
+    AbsoluteDocumentPos click_pos;
+};
+
 enum class PaperDownloadFinishedAction {
     None,
     OpenInSameWindow,
@@ -126,6 +152,8 @@ enum class PaperDownloadFinishedAction {
 
 
 // if we inherit from QWidget there are problems on high refresh rate smartphone displays
+struct WindowState;
+
 #ifdef SIOYEK_ANDROID
 class MainWidget : public QQuickWidget {
 #else
@@ -135,6 +163,7 @@ class MainWidget : public QMainWindow {
 public:
 	QMap<int, bool> keyStates;
 
+    static MainWidget* create_restored_window(MainWidget* sibling, const WindowState& state);
     fz_context* mupdf_context = nullptr;
     DatabaseManager* db_manager = nullptr;
     DocumentManager* document_manager = nullptr;
@@ -170,7 +199,10 @@ public:
     // input to be completed) this is where they are stored until they can be executed.
     std::unique_ptr<Command> pending_command_instance = nullptr;
     std::vector<Command*> commands_being_performed;
-    std::unique_ptr<Command> last_performed_command;
+    std::unique_ptr<Command> last_performed_command = nullptr;
+
+    std::string last_performed_command_name = "";
+    int last_performed_command_num_repeats = 0;
 
     DocumentView* main_document_view = nullptr;
     ScratchPad* scratchpad = nullptr;
@@ -243,7 +275,7 @@ public:
     // is the user currently selecing text? (happens when we left click and move the cursor)
     bool is_selecting = false;
     // is the user in word select mode? (happens when we double left click and move the cursor)
-    bool is_word_selecting = false;
+    SelectionMode selection_mode = SelectionMode::Character;
 
     // in select highlight mode, we immediately highlight the text when it is selected
     // with highlight type of `select_highlight_type` 
@@ -268,6 +300,9 @@ public:
     // set to be INTERVAL_TIME (which is 200ms at the time of writing this comment), however, it is set to a much
     // lower value when in smooth scroll mode or when user flicks a document in touch mode
     QTimer* validation_interval_timer = nullptr;
+    QDateTime last_persistance_datetime;
+
+    std::deque<ClickSpaceTime> recent_clicks;
 
     // the portal to be edited. This is usually set by `edit_portal` command which jumps to the portal
     // when we go back to the original location by jumping back in history, the portal will be edited
@@ -313,7 +348,7 @@ public:
     // (e.g. the main menu or search buttons) is visible. That is because the screen space is already
     // very limited in touch devices and we don't want to waste it using a statusbar unless it is absolutely required
     bool should_show_status_label_ = true;
-    bool should_show_status_label();
+    bool should_show_status_label(bool check_network=true);
 
     // the location of current character in sioyek's typing minigame
     std::optional<CharacterAddress> typing_location;
@@ -326,6 +361,7 @@ public:
     QWidget* text_command_line_edit_container = nullptr;
     QLabel* text_command_line_edit_label = nullptr;
     QLineEdit* text_command_line_edit = nullptr;
+    QLabel* command_hints_label = nullptr;
     QLabel* status_label_left = nullptr;
     QLabel* status_label_right = nullptr;
     QWidget* status_label = nullptr;
@@ -422,6 +458,10 @@ public:
     void handle_right_click(WindowPos click_pos, bool down, bool is_shift_pressed, bool is_control_pressed, bool is_command_pressed, bool is_alt_pressed);
     void on_config_changed(std::string config_name, bool should_save=false);
     void on_configs_changed(std::vector<std::string>* config_names);
+    QString get_command_hints_stylesheet() const;
+    void hide_command_hints();
+    void update_command_hints_position();
+    void show_command_hints(std::unordered_map<std::string, std::vector<std::string>>& hints);
 
     void next_state();
     void prev_state();
@@ -437,10 +477,11 @@ public:
     void change_selected_bookmark_text(const std::wstring& new_text);
     void change_selected_highlight_text_annot(const std::wstring& new_text);
     char get_current_selected_highlight_type();
-    void show_textbar(const std::wstring& command_name, const std::wstring& initial_value = L"");
+    void show_textbar(const std::wstring& command_name, const std::wstring& initial_value = L"", bool is_password = false);
     void show_mark_selector();
     void toggle_two_window_mode();
     void toggle_window_configuration();
+    void show_portal_window();
     void handle_portal();
     void start_creating_rect_portal(AbsoluteDocumentPos location);
     void add_portal(std::wstring source_path, Portal new_link);
@@ -475,6 +516,7 @@ public:
     void on_next_text_suggestion();
     void on_prev_text_suggestion();
     void set_current_text_suggestion();
+    void toggle_menu_collapse();
 
     std::wstring get_window_configuration_string();
     std::wstring get_serialized_configuration_string();
@@ -507,6 +549,7 @@ public:
         InputHandler* input_handler,
         CachedChecksummer* checksummer,
         bool* should_quit_ptr,
+        PdfRenderer* pdf_renderer,
         QWidget* parent = nullptr
     );
     MainWidget(MainWidget* other);
@@ -520,6 +563,7 @@ public:
     void invalidate_render();
     void invalidate_ui();
     void open_document(const Path& path, std::optional<float> offset_x = {}, std::optional<float> offset_y = {}, std::optional<float> zoom_level = {});
+    void open_document(const std::wstring& path, std::optional<float> offset_x = {}, std::optional<float> offset_y = {}, std::optional<float> zoom_level = {});
     void open_document_with_hash(const std::string& hash, std::optional<float> offset_x = {}, std::optional<float> offset_y = {}, std::optional<float> zoom_level = {});
     void open_document_at_location(const Path& path, int page, std::optional<float> x_loc, std::optional<float> y_loc, std::optional<float> zoom_level);
     void open_document(const DocumentViewState& state);
@@ -616,11 +660,14 @@ public:
     void portal_to_definition();
     void move_visual_mark_command(int amount);
     void handle_goto_loaded_document();
+    int get_current_tab_index();
+    void goto_ith_next_tab(int i);
 
     void handle_vertical_move(int amount);
     void handle_horizontal_move(int amount);
     void handle_goto_portal_list();
     void handle_goto_bookmark();
+    void handle_show_marks();
     void handle_goto_bookmark_global();
     std::wstring handle_add_highlight(char symbol);
     void handle_goto_highlight();
@@ -645,6 +692,8 @@ public:
     void handle_delete_selected_highlight();
     void handle_delete_selected_bookmark();
 	void handle_delete_last_highlight();
+    void handle_delete_selected_annotation();
+    void handle_edit_selected_annotation();
     void handle_start_reading();
     void handle_toggle_reading();
     void handle_stop_reading();
@@ -696,7 +745,14 @@ public:
     std::deque<std::pair<QTime, QPoint>> position_buffer;
     float velocity_x = 0;
     float velocity_y = 0;
+
+    // we stop the smooth move after moving this amount
+    std::optional<float> smooth_y_move_amount;
+
     bool is_velocity_fixed = false;
+
+    // are we scrolling due to the mouse moving to the screen edge while selecting text?
+    bool is_mouse_edge_scrolling = false;
 
     // indicates if mouse was in next/prev ruler rect in touch mode
     // if this is the case, we use mouse movement to perform next/prev ruler command
@@ -860,10 +916,20 @@ public:
     void on_socket_deleted(QLocalSocket* deleted_socket);
     Q_INVOKABLE QJsonObject get_json_state();
     Q_INVOKABLE void set_state(QJsonObject state);
-    QJsonObject get_json_annotations();
-    QJsonArray get_all_json_states();
+    Q_INVOKABLE QJsonObject get_json_annotations();
+    Q_INVOKABLE void goto_offset(float x_offset, float y_offset);
+    Q_INVOKABLE QJsonObject absolute_to_window_rect_json(QJsonObject absolute_rect_json);
+
+    Q_INVOKABLE void screenshot_js(QString file_path, QJsonObject window_rect);
+    Q_INVOKABLE void framebuffer_screenshot_js(QString file_path, QJsonObject window_rect);
+
+    Q_INVOKABLE QString perform_network_request_with_headers(QString method, QString url, QJsonObject headers, QJsonObject request, bool* is_done=nullptr, QByteArray* response=nullptr);
+    Q_INVOKABLE void copy_text_to_clipboard(QString str);
+
     void screenshot(std::wstring file_path);
     void framebuffer_screenshot(std::wstring file_path);
+
+    QJsonArray get_all_json_states();
     void export_command_names(std::wstring file_path);
     void export_config_names(std::wstring file_path);
     void export_default_config_file(std::wstring file_path);
@@ -927,11 +993,12 @@ public:
     void zoom_out_overview();
     Q_INVOKABLE QString run_macro_on_main_thread(QString macro_string, bool wait_for_result=true, int target_window_id=-1);
     Q_INVOKABLE QString perform_network_request(QString url);
-    Q_INVOKABLE QString read_text_file(QString path);
+    Q_INVOKABLE QString read_file(QString path, bool encode_base_64=false);
     Q_INVOKABLE void execute_macro_and_return_result(QString macro_string, bool* is_done, std::wstring* result);
     Q_INVOKABLE QString execute_macro_sync(QString macro);
     Q_INVOKABLE void set_variable(QString name, QVariant var);
     Q_INVOKABLE QVariant get_variable(QString name);
+    Q_INVOKABLE QString get_environment_variable(QString name);
     void run_javascript_command(std::wstring javascript_code, std::optional<std::wstring> entry_point, bool is_async);
     void set_text_prompt_text(QString text);
     AbsoluteDocumentPos get_window_abspos(WindowPos window_pos);
@@ -964,8 +1031,10 @@ public:
     void set_selected_bookmark_index(int index);
     void handle_highlight_tags_pre_perform(const std::vector<int>& visible_highlight_indices);
     void handle_visible_bookmark_tags_pre_perform(const std::vector<int>& visible_bookmark_indices);
+    void handle_visible_objects_tags_pre_perform(const std::vector<SioyekVisibleObjectIndex>& visible_object_indices);
     void clear_keyboard_select_highlights();
-    void handle_goto_link_with_page_and_offset(int page, float y_offset);
+    void highlight_link_destination(int page, float y_offset, float x_offset);
+    void handle_goto_link_with_page_and_offset(int page, float y_offset, float x_offset);
     std::optional<std::wstring> get_search_suggestion_with_index(int index);
     bool is_menu_focused();
     void ensure_player_state_(QString state);
@@ -975,6 +1044,7 @@ public:
     // void stop_tts_service();
     //void handle_move_smooth_press(bool down);
     void handle_move_smooth_hold(bool down);
+    void handle_move_smooth_horizontal_hold(bool left);
     void handle_toggle_two_page_mode();
     void ensure_zero_interval_timer();
     void set_last_performed_command(std::unique_ptr<Command> command);
@@ -985,12 +1055,25 @@ public:
     AbsoluteDocumentPos get_mouse_abspos();
     void move_selected_bookmark_to_mouse_cursor();
     bool handle_annotation_move_finish();
-    void set_fixed_velocity(float vel);
+    std::optional<FixedVelocityState> get_continuous_fixed_velocity_state() const;
+    void restore_fixed_velocity_state(const FixedVelocityState& fixed_velocity_state);
+    void set_fixed_velocity(float vel_y, float vel_x, std::optional<float> y_move_amount={});
     QMenuBar* create_main_menu_bar();
     void create_menu_from_menu_node(QMenu* parent, MenuNode* items, std::unordered_map<std::string, std::vector<std::string>>& command_key_mappings);
     void delete_menu_nodes(MenuNode* items);
     void set_pending_portal(std::optional<std::wstring> doc_path, Portal portal);
     void set_pending_portal(std::optional<std::pair<std::optional<std::wstring>, Portal>> pending_portal);
+    void update_text_selection_with_begin_and_end(AbsoluteDocumentPos begin, AbsoluteDocumentPos end);
+    void update_text_selection(AbsoluteDocumentPos mouse_abspos);
+    int update_recent_clicks(AbsoluteDocumentPos mouse_abspos);
+    void handle_triple_click(AbsoluteDocumentPos mouse_abspos);
+    void repeat_last_command();
+    void handle_selection_mouse_edge_scrolling(QMouseEvent* me);
+    void adjust_two_page_mode_document_zoom_and_offset(std::wstring doc_path);
+
+    void select_next_char();
+    void unselect_last_char();
+    void select_word_under_cursor();
 
 private:
 #ifdef NIGHT_P

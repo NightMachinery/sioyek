@@ -1,7 +1,7 @@
 #include <cmath>
 
 #include <qcolor.h>
-#include <qmouseevent.h>
+#include <QMouseEvent>
 #include <qapplication.h>
 #include <qdatetime.h>
 #include <qfile.h>
@@ -73,6 +73,7 @@ extern bool HIDE_OVERLAPPING_LINK_LABELS;
 extern bool PRESERVE_IMAGE_COLORS;
 extern bool INVERTED_PRESERVED_IMAGE_COLORS;
 extern bool INVERT_SELECTED_TEXT;
+extern bool SAME_WIDTH;
 
 extern int NUM_PRERENDERED_NEXT_SLIDES;
 extern int NUM_PRERENDERED_PREV_SLIDES;
@@ -931,9 +932,9 @@ void PdfViewOpenGLWidget::render_overview(OverviewState overview) {
     draw_overview_background();
 
 
-    render_page(page, true, ColorPalette::None, false);
-    render_page(page-1, true, ColorPalette::None, false);
-    render_page(page+1, true, ColorPalette::None, false);
+    render_page(page, true, ColorPalette::None, true);
+    render_page(page-1, true, ColorPalette::None, true);
+    render_page(page+1, true, ColorPalette::None, true);
 
     std::optional<SearchResult> highlighted_result = get_current_search_result();
     // highlight the overview search result
@@ -1014,6 +1015,13 @@ void PdfViewOpenGLWidget::render_page(int page_number, bool in_overview, ColorPa
 
     float zoom_level = in_overview ? get_overview_zoom_level() : document_view->get_zoom_level();
 
+    if (SAME_WIDTH && document_view->same_width_mode_first_page_width) {
+        float factor = document_view->same_width_mode_first_page_width.value() / page_width;
+        page_width *= factor;
+        page_height *= factor;
+        zoom_level *= factor;
+    }
+
     bool is_sliced = num_slices_for_page_rect(page_rect, &nh, &nv);
 
     for (int i = 0; i < nh * nv; i++) {
@@ -1065,6 +1073,10 @@ void PdfViewOpenGLWidget::render_page(int page_number, bool in_overview, ColorPa
             devicePixelRatioF(),
             &rendered_width,
             &rendered_height);
+
+        if (is_helper && !texture){
+            is_helper_waiting_for_render = true;
+        }
 
 
         // when rotating, we swap nv and nh 
@@ -1210,37 +1222,65 @@ void PdfViewOpenGLWidget::render_page(int page_number, bool in_overview, ColorPa
             disable_stencil();
         }
 
-        if ((get_current_color_mode() != Normal) && (PRESERVE_IMAGE_COLORS) && (!in_overview) && (forced_color_palette == ColorPalette::None) && (stencils_allowed)) {
+        if ((get_current_color_mode() != Normal) && (PRESERVE_IMAGE_COLORS) && (forced_color_palette == ColorPalette::None) && (stencils_allowed)) {
             // render images in forced palette mode
-            fz_stext_page * stext_page = document_view->get_document()->get_stext_with_page_number(page_number);
+            fz_stext_page * stext_page = doc(in_overview)->get_stext_with_page_number(page_number);
             std::vector<PagelessDocumentRect> image_rects;
-            for (fz_stext_block* blk = stext_page->first_block; blk != nullptr; blk = blk->next) {
-                if (blk->type == FZ_STEXT_BLOCK_IMAGE) {
-                        float im_x = blk->u.i.transform.e;
-                        float im_y = blk->u.i.transform.f;
-                        float im_w = blk->u.i.transform.a;
-                        float im_h = blk->u.i.transform.d;
-                        PagelessDocumentRect image_rect;
-                        image_rect.x0 = im_x;
-                        image_rect.x1 = im_x + im_w;
-                        image_rect.y0 = im_y;
-                        image_rect.y1 = im_y + im_h;
-                        image_rects.push_back(image_rect);
+            if (stext_page) {
+                for (fz_stext_block* blk = stext_page->first_block; blk != nullptr; blk = blk->next) {
+                    if (blk->type == FZ_STEXT_BLOCK_IMAGE) {
+                            float im_x = blk->u.i.transform.e;
+                            float im_y = blk->u.i.transform.f;
+                            float im_w = blk->u.i.transform.a;
+                            float im_h = blk->u.i.transform.d;
+                            PagelessDocumentRect image_rect;
+                            image_rect.x0 = im_x;
+                            image_rect.x1 = im_x + im_w;
+                            image_rect.y0 = im_y;
+                            image_rect.y1 = im_y + im_h;
+                            image_rects.push_back(image_rect);
+                    }
                 }
             }
 
-            glClear(GL_STENCIL_BUFFER_BIT);
-            enable_stencil();
-            write_to_stencil();
-            draw_stencil_rects(page_number, image_rects);
-            use_stencil_to_write(true);
-            ColorPalette target_palette = ColorPalette::Normal;
-            if (color_mode == ColorPalette::Custom && INVERTED_PRESERVED_IMAGE_COLORS) {
-                target_palette = ColorPalette::Dark;
-            }
+            if (!image_rects.empty()) {
+                ColorPalette target_palette = ColorPalette::Normal;
+                if (color_mode == ColorPalette::Custom && INVERTED_PRESERVED_IMAGE_COLORS) {
+                    target_palette = ColorPalette::Dark;
+                }
 
-            render_page(page_number, in_overview, target_palette, false);
-            disable_stencil();
+                if (in_overview) {
+                    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+                    glStencilFunc(GL_EQUAL, 1, 0xFF);
+                    glStencilOp(GL_KEEP, GL_KEEP, GL_INCR);
+                    draw_stencil_rects(page_number, image_rects, true);
+                    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+
+                    glStencilFunc(GL_EQUAL, 2, 0xFF);
+                    glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+
+                    render_page(page_number, in_overview, target_palette, false);
+
+                    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+                    glStencilFunc(GL_EQUAL, 2, 0xFF);
+                    glStencilOp(GL_KEEP, GL_KEEP, GL_DECR);
+                    draw_stencil_rects(page_number, image_rects, true);
+                    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+
+                    glStencilFunc(GL_EQUAL, 1, 0xFF);
+                    glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+                }
+                else {
+                    glClear(GL_STENCIL_BUFFER_BIT);
+                    enable_stencil();
+                    write_to_stencil();
+                    draw_stencil_rects(page_number, image_rects, false);
+                    use_stencil_to_write(true);
+
+                    render_page(page_number, in_overview, target_palette, false);
+                    disable_stencil();
+                }
+            }
         }
 
         if (!document_view->is_presentation_mode() && (!in_overview) && (!document_view->is_two_page_mode())){
@@ -1319,13 +1359,32 @@ void PdfViewOpenGLWidget::my_render(QPainter* painter) {
             draw_empty_helper_message(painter, "No portals yet");
         }
         else {
-            std::vector<std::wstring> last_opened_file_path = get_last_opened_file_name();
+            std::wstring last_opened_file_path = L"";
 
-            if (last_opened_file_path.size() > 0) {
-                draw_empty_helper_message(painter, "Document " + QString::fromStdWString(last_opened_file_path[0]) + " does not exist");
+            if (document_view) {
+                last_opened_file_path = document_view->last_opened_file_path;
+            }
+
+            if (last_opened_file_path.size() == 0) {
+                std::vector<std::wstring> prev_files = get_last_opened_file_name();
+                if (prev_files.size() > 0) {
+                    last_opened_file_path = prev_files[0];
+                }
+
+            }
+
+
+            if (document_view && document_view->was_set_to_null) {
+                draw_empty_helper_message(painter, "No document.");
             }
             else {
-                draw_empty_helper_message(painter, "No document");
+                if (last_opened_file_path.size() > 0) {
+                    draw_empty_helper_message(painter, "Document " + QString::fromStdWString(last_opened_file_path) + " does not exist");
+                }
+                else {
+                    draw_empty_helper_message(painter, "No document");
+                }
+
             }
         }
         return;
@@ -1377,6 +1436,7 @@ void PdfViewOpenGLWidget::my_render(QPainter* painter) {
         render_page(presentation_page_number);
     }
     else {
+        is_helper_waiting_for_render = false;
         std::array<float, 3> link_highlight_color = cc3(DEFAULT_LINK_HIGHLIGHT_COLOR);
 
         for (int page : visible_pages) {
@@ -1407,16 +1467,17 @@ void PdfViewOpenGLWidget::my_render(QPainter* painter) {
         if (visible_pages.size() > 0) {
             int num_pages = document_view->get_document()->num_pages();
             int max_page = visible_pages[visible_pages.size() - 1];
-            for (int i = 1; i < (PRERENDERED_PAGE_COUNT + 1); i++) {
+            for (int i = 0; i < (PRERENDERED_PAGE_COUNT + 1); i++) {
                 if (max_page + i < num_pages) {
                     float page_width = document_view->get_document()->get_page_width(max_page + i);
-                    float page_height = document_view->get_document()->get_page_width(max_page + i);
+                    float page_height = document_view->get_document()->get_page_height(max_page + i);
                     PagelessDocumentRect page_rect({ 0, 0, page_width, page_height });
                     int nh, nv;
                     num_slices_for_page_rect(page_rect, &nh, &nv);
 
                     for (int k = 0; k < nh * nv; k++) {
-                        pdf_renderer->find_rendered_page(document_view->get_document()->get_path(),
+                        pdf_renderer->find_rendered_page(
+                            document_view->get_document()->get_path(),
                             max_page + i,
                             document_view->get_document()->should_render_pdf_annotations(),
                             k,
@@ -1573,8 +1634,9 @@ void PdfViewOpenGLWidget::my_render(QPainter* painter) {
             }
 
 
+            glUseProgram(shared_gl_objects.highlight_program);
             glUniform3fv(shared_gl_objects.highlight_color_uniform_location, 1, RULER_COLOR);
-            glUniform1f(shared_gl_objects.highlight_opacity_uniform_location, 0.3f);
+            glUniform1f(shared_gl_objects.highlight_opacity_uniform_location, 1.0f);
             render_highlight_window(shared_gl_objects.highlight_program, ruler_rect.value(), flags, RULER_UNDERLINE_PIXEL_WIDTH);
         }
         if (underline) {
@@ -1707,6 +1769,13 @@ void PdfViewOpenGLWidget::my_render(QPainter* painter) {
                                 std::array<float, 3> box_color = cc3( & HIGHLIGHT_COLORS[3 * (mode - 'a')]);
                                 painter->setPen(convert_float3_to_qcolor(&box_color[0]));
                                 painter->drawRect(window_rect.x0, window_rect.y0, fz_irect_width(window_rect), fz_irect_height(window_rect));
+                            }
+                            else if (mode >= 'A' && mode <= 'Z'){
+                                std::array<float, 3> box_color = cc3(&HIGHLIGHT_COLORS[3 * (mode - 'A')]);
+                                QColor color = convert_float3_to_qcolor(&box_color[0]);
+                                color.setAlphaF(0.3f);
+                                // painter->setPen(convert_float3_to_qcolor(&box_color[0]));
+                                painter->fillRect(window_rect.x0, window_rect.y0, fz_irect_width(window_rect), fz_irect_height(window_rect), color);
                             }
                         }
                     }
@@ -2212,13 +2281,13 @@ float PdfViewOpenGLWidget::get_overview_side_pos(int index) {
     if (index == OverviewSide::bottom) {
         return overview_offset_y - overview_half_height;
     }
-    if (index == OverviewSide::top) {
+    else if (index == OverviewSide::top) {
         return overview_offset_y + overview_half_height;
     }
-    if (index == OverviewSide::left) {
+    else if (index == OverviewSide::left) {
         return overview_offset_x - overview_half_width;
     }
-    if (index == OverviewSide::right) {
+    else {
         return overview_offset_x + overview_half_width;
     }
 }
@@ -2451,10 +2520,15 @@ void PdfViewOpenGLWidget::draw_stencil_rects(const std::vector<NormalizedWindowR
 
 }
 
-void PdfViewOpenGLWidget::draw_stencil_rects(int page, const std::vector<PagelessDocumentRect>& rects) {
+void PdfViewOpenGLWidget::draw_stencil_rects(int page, const std::vector<PagelessDocumentRect>& rects, bool in_overview) {
     std::vector<NormalizedWindowRect> normalized_rects;
     for (auto rect : rects) {
-        normalized_rects.push_back(DocumentRect(rect, page).to_window_normalized(document_view));
+        if (in_overview) {
+            normalized_rects.push_back(document_to_overview_rect(DocumentRect(rect, page)));
+        }
+        else {
+            normalized_rects.push_back(DocumentRect(rect, page).to_window_normalized(document_view));
+        }
     }
     draw_stencil_rects(normalized_rects);
 }
@@ -3643,7 +3717,7 @@ void PdfViewOpenGLWidget::set_overview_highlights(const std::vector<DocumentRect
 }
 
 bool PdfViewOpenGLWidget::needs_stencil_buffer() {
-    return fastread_mode || selected_rectangle.has_value() || overview_page.has_value();
+    return fastread_mode || selected_rectangle.has_value() || overview_page.has_value() || (PRESERVE_IMAGE_COLORS && color_mode != ColorPalette::Normal);
 }
 
 void PdfViewOpenGLWidget::zoom_overview(float scale){

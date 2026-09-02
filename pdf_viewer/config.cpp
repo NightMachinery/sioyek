@@ -26,6 +26,18 @@ bool DEBUG_DISPLAY_FREEHAND_POINTS = false;
 bool DEBUG_SMOOTH_FREEHAND_DRAWINGS = true;
 bool ADD_NEWLINES_WHEN_COPYING_TEXT = false;
 bool ALWAYS_COPY_SELECTED_TEXT = false;
+bool SHOW_STATUSBAR_ONLY_WHEN_MOUSE_OVER = false;
+float PERSISTANCE_PERIOD = -1.0f;
+float TEXT_SELECTION_MINIMUM_DISTANCE = 5;
+bool SCROLL_PAST_DOCUMENT_ENDS = true;
+bool HORIZONTAL_SCROLL_PAST_PAGE_ENDS = false;
+bool SIMPLIFY_FREEHAND_DRAWINGS = true;
+bool RECTO_VERSO_ADJUSTMENT = false;
+bool KEYBOARD_SELECT_INCLUSIVE = false;
+bool SHOW_COMMAND_HINTS = false;
+bool RESTORE_ALL_WINDOWS_ON_STARTUP = false;
+bool DISABLE_CURSOR_BLINKING = false;
+bool FREE_TOUCHPAD_MOVEMENT = false;
 
 #ifdef SIOYEK_MOBILE
 bool TOUCH_MODE = true;
@@ -44,6 +56,7 @@ bool SHOULD_RENDER_PDF_ANNOTATIONS = true;
 bool AUTOMATICALLY_DOWNLOAD_MATCHING_PAPER_NAME = true;
 bool NO_AUTO_CONFIG = false;
 bool USE_RULER_TO_HIGHLIGHT_SYNCTEX_LINE = true;
+bool HIGHLIGHT_LINK_DESTINATION = false;
 bool HIDE_OVERLAPPING_LINK_LABELS = true;
 bool DONT_FOCUS_IF_SYNCTEX_RECT_IS_VISIBLE = false;
 bool GG_USES_LABELS = false;
@@ -61,6 +74,8 @@ std::wstring PAPER_SEARCH_URL = L"https://search.fatcat.wiki/fatcat_release/_sea
 std::wstring PAPER_SEARCH_URL_PATH = L"hits.hits[]._source.best_pdf_url";
 std::wstring PAPER_SEARCH_TILE_PATH = L"hits.hits[]._source.title";
 std::wstring PAPER_SEARCH_CONTRIB_PATH = L"hits.hits[]._source.contrib_names";
+
+std::wstring PERIODIC_COMMANDS = L"";
 
 std::wstring MIDDLE_CLICK_SEARCH_ENGINE = L"s";
 std::wstring SHIFT_MIDDLE_CLICK_SEARCH_ENGINE = L"l";
@@ -114,12 +129,14 @@ int PERSIST_MILIES = 1000 * 60;
 int PAGE_PADDINGS = 0;
 int MAX_PENDING_REQUESTS = 31;
 bool FLAT_TABLE_OF_CONTENTS = false;
+bool USE_PAGE_LABELS_IN_TABLE_OF_CONTENTS = false;
 bool SHOULD_USE_MULTIPLE_MONITORS = false;
 bool SHOULD_CHECK_FOR_LATEST_VERSION_ON_STARTUP = false;
 bool DEFAULT_DARK_MODE = false;
 bool USE_SYSTEM_THEME = false;
 bool USE_CUSTOM_COLOR_FOR_DARK_SYSTEM_THEME = false;
 bool SORT_BOOKMARKS_BY_LOCATION = true;
+bool SORT_HIGHLIGHTS_BY_LOCATION = true;
 std::wstring LIBGEN_ADDRESS = L"";
 std::wstring GOOGLE_SCHOLAR_ADDRESS = L"";
 std::wstring INVERSE_SEARCH_COMMAND = L"";
@@ -130,6 +147,8 @@ std::wstring STATUS_FONT_FACE_NAME = L"";
 std::wstring DEFAULT_OPEN_FILE_PATH = L"";
 std::wstring ANNOTATIONS_DIR_PATH = L"";
 bool SHOULD_LOAD_TUTORIAL_WHEN_NO_OTHER_FILE = true;
+bool OPEN_LAST_FILE_ON_STARTUP = true;
+bool FAIL_SAFE_AUTO_SAVE_SESSION = false;
 bool SHOULD_LAUNCH_NEW_INSTANCE = false;
 bool SHOULD_LAUNCH_NEW_WINDOW = false;
 bool SHOULD_DRAW_UNRENDERED_PAGES = false;
@@ -197,6 +216,7 @@ bool USE_LEGACY_KEYBINDS = false;
 bool MULTILINE_MENUS = true;
 bool START_WITH_HELPER_WINDOW = false;
 std::map<std::wstring, std::wstring> ADDITIONAL_COMMANDS;
+bool LIGHTEN_COLORS_WHEN_EMBEDDING_ANNOTATIONS = true;
 
 
 std::map<std::wstring, JsCommandInfo> ADDITIONAL_JAVASCRIPT_COMMANDS;
@@ -214,8 +234,8 @@ bool ALLOW_MAIN_VIEW_SCROLL_WHILE_IN_OVERVIEW = false;
 std::wstring CONTEXT_MENU_ITEMS = L"";
 std::wstring CONTEXT_MENU_ITEMS_FOR_SELECTED_TEXT = L"copy|add_highlight(a)|add_highlight(b)|add_highlight(c)";
 std::wstring CONTEXT_MENU_ITEMS_FOR_LINKS = L"";
-std::wstring CONTEXT_MENU_ITEMS_FOR_HIGHLIGHTS = L"delete_highlight|edit_selected_highlight|add_highlight(a)|add_highlight(b)|add_highlight(c)";
-std::wstring CONTEXT_MENU_ITEMS_FOR_BOOKMARKS = L"delete_visible_bookmark|edit_selected_bookmark|move_selected_bookmark";
+std::wstring CONTEXT_MENU_ITEMS_FOR_HIGHLIGHTS = L"delete_highlight|edit_selected_annotation|add_highlight(a)|add_highlight(b)|add_highlight(c)";
+std::wstring CONTEXT_MENU_ITEMS_FOR_BOOKMARKS = L"delete_visible_annotation|edit_selected_annotation|move_selected_bookmark";
 std::wstring CONTEXT_MENU_ITEMS_FOR_OVERVIEW = L"";
 
 bool RIGHT_CLICK_CONTEXT_MENU = false;
@@ -281,6 +301,7 @@ float FREETEXT_BOOKMARK_COLOR[3] = { 0.0f, 0.0f, 0.0f };
 float FREETEXT_BOOKMARK_FONT_SIZE = 8.0f;
 bool RENDER_FREETEXT_BORDERS = false;
 bool REAL_PAGE_SEPARATION = false;
+bool SAME_WIDTH = false;
 
 float EPUB_WIDTH = 400;
 float EPUB_HEIGHT = 700;
@@ -330,6 +351,10 @@ std::wstring ALT_CLICK_COMMAND = L"";
 std::wstring ALT_RIGHT_CLICK_COMMAND = L"";
 std::wstring HOLD_MIDDLE_CLICK_COMMAND = L"download_paper_under_cursor";
 std::wstring TABLET_PEN_CLICK_COMMAND = L"[s]show_touch_draw_controls;[r]move_visual_mark_next";
+std::wstring RIGHT_CLICK_SCROLL_UP_COMMAND = L"";
+std::wstring RIGHT_CLICK_SCROLL_DOWN_COMMAND = L"";
+std::wstring LEFT_CLICK_SCROLL_UP_COMMAND = L"";
+std::wstring LEFT_CLICK_SCROLL_DOWN_COMMAND = L"";
 //std::wstring TABLET_PEN_CLICK_COMMAND = L"[s]show_touch_main_menu;[r]move_visual_mark_next";
 //std::wstring TABLET_PEN_DOUBLE_CLICK_COMMAND = L"toggle_scratchpad_mode";
 std::wstring TABLET_PEN_DOUBLE_CLICK_COMMAND = L"load_scratchpad";
@@ -878,6 +903,7 @@ ConfigManager::ConfigManager(const Path& default_path, const Path& auto_path, co
     add_color3(L"freetext_bookmark_color", FREETEXT_BOOKMARK_COLOR);
     add_color3(L"link_highlight_color", DEFAULT_LINK_HIGHLIGHT_COLOR);
     add_color3(L"synctex_highlight_color", DEFAULT_SYNCTEX_HIGHLIGHT_COLOR);
+    add_color3(L"link_destination_highlight_color", DEFAULT_SYNCTEX_HIGHLIGHT_COLOR);
     add_color3(L"ruler_color", RULER_COLOR);
     add_color3(L"ruler_marker_color", RULER_MARKER_COLOR);
     add_color3(L"background_color", BACKGROUND_COLOR);
@@ -900,6 +926,7 @@ ConfigManager::ConfigManager(const Path& default_path, const Path& auto_path, co
     add_color4(L"keyboard_selected_tag_text_color", KEYBOARD_SELECTED_TAG_TEXT_COLOR);
     add_color4(L"keyboard_selected_tag_background_color", KEYBOARD_SELECTED_TAG_BACKGROUND_COLRO);
     add_float(L"synctex_highlight_timeout", &HIDE_SYNCTEX_HIGHLIGHT_TIMEOUT, FloatExtras{-1.0f, 100.0f});
+    add_float(L"link_destination_highlight_timeout", &HIDE_SYNCTEX_HIGHLIGHT_TIMEOUT, FloatExtras{-1.0f, 100.0f});
     add_float(L"dark_mode_contrast", &DARK_MODE_CONTRAST, FloatExtras{0.0f, 1.0f});
     add_float(L"freetext_bookmark_font_size", &FREETEXT_BOOKMARK_FONT_SIZE, FloatExtras{0.0f, 100.0f});
     add_float(L"custom_color_contrast", &CUSTOM_COLOR_CONTRAST, FloatExtras{0.0f, 1.0f});
@@ -933,11 +960,14 @@ ConfigManager::ConfigManager(const Path& default_path, const Path& auto_path, co
     add_float(L"epub_width", &EPUB_WIDTH, FloatExtras{0.0f, 1000.0f});
     add_float(L"epub_height", &EPUB_HEIGHT, FloatExtras{0.0f, 1000.0f});
     add_float(L"epub_font_size", &EPUB_FONT_SIZE, FloatExtras{0.0f, 100.0f});
+    add_float(L"persistance_period", &PERSISTANCE_PERIOD, FloatExtras{-1.0f, 100000.0f});
+    add_float(L"text_selection_minimum_distance", &TEXT_SELECTION_MINIMUM_DISTANCE, FloatExtras{-0.0f, 100.0f});
     add_bool(L"default_dark_mode", &DEFAULT_DARK_MODE);
     add_bool(L"use_system_theme", &USE_SYSTEM_THEME);
     add_bool(L"use_custom_color_as_dark_system_theme", &USE_CUSTOM_COLOR_FOR_DARK_SYSTEM_THEME);
     add_bool(L"render_freetext_borders", &RENDER_FREETEXT_BORDERS);
     add_bool(L"flat_toc", &FLAT_TABLE_OF_CONTENTS);
+    add_bool(L"page_labels_in_table_of_contents", &USE_PAGE_LABELS_IN_TABLE_OF_CONTENTS);
     add_bool(L"adjust_annotation_colors_for_dark_mode", &ADJUST_ANNOTATION_COLORS_FOR_DARK_MODE);
     add_bool(L"right_click_context_menu", &SHOW_RIGHT_CLICK_CONTEXT_MENU);
     add_bool(L"preserve_image_colors_in_dark_mode", &PRESERVE_IMAGE_COLORS);
@@ -951,6 +981,8 @@ ConfigManager::ConfigManager(const Path& default_path, const Path& auto_path, co
     add_bool(L"paper_download_should_detect_paper_name", &PAPER_DOWNLOAD_AUTODETECT_PAPER_NAME);
     add_bool(L"automatically_download_matching_paper_name", &AUTOMATICALLY_DOWNLOAD_MATCHING_PAPER_NAME);
     add_bool(L"should_load_tutorial_when_no_other_file", &SHOULD_LOAD_TUTORIAL_WHEN_NO_OTHER_FILE);
+    add_bool(L"open_last_file_on_startup", &OPEN_LAST_FILE_ON_STARTUP);
+    add_bool(L"fail_safe_auto_save_session", &FAIL_SAFE_AUTO_SAVE_SESSION);
     add_bool(L"should_launch_new_instance", &SHOULD_LAUNCH_NEW_INSTANCE);
     add_bool(L"should_launch_new_window", &SHOULD_LAUNCH_NEW_WINDOW);
     add_bool(L"should_draw_unrendered_pages", &SHOULD_DRAW_UNRENDERED_PAGES);
@@ -960,6 +992,7 @@ ConfigManager::ConfigManager(const Path& default_path, const Path& auto_path, co
     add_bool(L"align_link_dest_to_top", &ALIGN_LINK_DEST_TO_TOP);
     add_bool(L"check_for_updates_on_startup", &SHOULD_CHECK_FOR_LATEST_VERSION_ON_STARTUP);
     add_bool(L"sort_bookmarks_by_location", &SORT_BOOKMARKS_BY_LOCATION);
+    add_bool(L"sort_highlights_by_location", &SORT_HIGHLIGHTS_BY_LOCATION);
     add_bool(L"hover_overview", &HOVER_OVERVIEW);
     add_bool(L"rerender_overview", &RERENDER_OVERVIEW);
     add_bool(L"wheel_zoom_on_cursor", &WHEEL_ZOOM_ON_CURSOR);
@@ -968,6 +1001,7 @@ ConfigManager::ConfigManager(const Path& default_path, const Path& auto_path, co
     add_bool(L"render_pdf_annotations", &SHOULD_RENDER_PDF_ANNOTATIONS);
     add_bool(L"ruler_mode", &RULER_MODE);
     add_bool(L"use_ruler_to_highlight_synctex_line", &USE_RULER_TO_HIGHLIGHT_SYNCTEX_LINE);
+    add_bool(L"highlight_link_destination", &HIGHLIGHT_LINK_DESTINATION);
     add_bool(L"show_most_recent_commands_first", &SHOW_MOST_RECENT_COMMANDS_FIRST);
     add_bool(L"keyboard_point_selection", &USE_KEYBOARD_POINT_SELECTION);
     add_bool(L"text_summary_should_refine", &TEXT_SUMMARY_HIGHLIGHT_SHOULD_REFINE);
@@ -986,6 +1020,7 @@ ConfigManager::ConfigManager(const Path& default_path, const Path& auto_path, co
     add_bool(L"use_legacy_keybinds", &USE_LEGACY_KEYBINDS);
     add_bool(L"multiline_menus", &MULTILINE_MENUS);
     add_bool(L"start_with_helper_window", &START_WITH_HELPER_WINDOW);
+    add_bool(L"lighten_colors_when_embedding_annotations", &LIGHTEN_COLORS_WHEN_EMBEDDING_ANNOTATIONS);
     add_bool(L"prerender_next_page_presentation", &PRERENDER_NEXT_PAGE);
     add_bool(L"highlight_middle_click", &HIGHLIGHT_MIDDLE_CLICK);
     add_bool(L"auto_rename_downloaded_papers", &AUTO_RENAME_DOWNLOADED_PAPERS);
@@ -1012,6 +1047,17 @@ ConfigManager::ConfigManager(const Path& default_path, const Path& auto_path, co
     add_bool(L"background_pixel_fix", &BACKGROUND_PIXEL_FIX);
     add_bool(L"add_newlines_when_copying_text", &ADD_NEWLINES_WHEN_COPYING_TEXT);
     add_bool(L"always_copy_selected_text", &ALWAYS_COPY_SELECTED_TEXT);
+    add_bool(L"show_statusbar_only_when_hovered", &SHOW_STATUSBAR_ONLY_WHEN_MOUSE_OVER);
+    add_bool(L"scroll_past_document_ends", &SCROLL_PAST_DOCUMENT_ENDS);
+    add_bool(L"horizontal_scroll_past_page_ends", &HORIZONTAL_SCROLL_PAST_PAGE_ENDS);
+    add_bool(L"uniform_page_widths", &SAME_WIDTH);
+    add_bool(L"simplify_freehand_drawings", &SIMPLIFY_FREEHAND_DRAWINGS);
+    add_bool(L"recto_verso_adjustment", &RECTO_VERSO_ADJUSTMENT);
+    add_bool(L"keyboard_select_inclusive", &KEYBOARD_SELECT_INCLUSIVE);
+    add_bool(L"show_command_hints", &SHOW_COMMAND_HINTS);
+    add_bool(L"restore_all_windows_on_startup", &RESTORE_ALL_WINDOWS_ON_STARTUP);
+    add_bool(L"disable_cursor_blinking", &DISABLE_CURSOR_BLINKING);
+    add_bool(L"free_touchpad_movement", &FREE_TOUCHPAD_MOVEMENT);
 
     add_string(L"google_scholar_address", &GOOGLE_SCHOLAR_ADDRESS);
     add_string(L"item_list_prefix", &ITEM_LIST_PREFIX);
@@ -1036,6 +1082,7 @@ ConfigManager::ConfigManager(const Path& default_path, const Path& auto_path, co
     add_string(L"paper_download_url_path", &PAPER_SEARCH_URL_PATH);
     add_string(L"paper_download_title_path", &PAPER_SEARCH_TILE_PATH);
     add_string(L"paper_download_contrib_path", &PAPER_SEARCH_CONTRIB_PATH);
+    add_string(L"periodic_commands", &PERIODIC_COMMANDS);
     add_string(L"default_open_file_path", &DEFAULT_OPEN_FILE_PATH);
     add_string(L"annotations_directory", &ANNOTATIONS_DIR_PATH);
     add_string(L"status_bar_format", &STATUS_BAR_FORMAT);
@@ -1049,6 +1096,10 @@ ConfigManager::ConfigManager(const Path& default_path, const Path& auto_path, co
     add_macro(L"hold_middle_click_command", &HOLD_MIDDLE_CLICK_COMMAND);
     add_macro(L"back_rect_tap_command", &BACK_RECT_TAP_COMMAND);
     add_macro(L"tablet_pen_click_command", &TABLET_PEN_CLICK_COMMAND);
+    add_macro(L"right_click_scroll_up_command", &RIGHT_CLICK_SCROLL_UP_COMMAND);
+    add_macro(L"right_click_scroll_down_command", &RIGHT_CLICK_SCROLL_DOWN_COMMAND);
+    add_macro(L"left_click_scroll_up_command", &LEFT_CLICK_SCROLL_UP_COMMAND);
+    add_macro(L"left_click_scroll_down_command", &LEFT_CLICK_SCROLL_DOWN_COMMAND);
     add_macro(L"tablet_pen_double_click_command", &TABLET_PEN_DOUBLE_CLICK_COMMAND);
     add_macro(L"volume_down_command", &VOLUME_DOWN_COMMAND);
     add_macro(L"volume_down_command", &VOLUME_UP_COMMAND);

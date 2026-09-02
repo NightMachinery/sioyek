@@ -64,6 +64,10 @@ protected:
     float page_space_x = 0;
     float page_space_y = 0;
 
+    float max_virtual_y;
+    float min_virtual_x;
+    float max_virtual_x;
+
 public:
     // list of selected characters (e.g. using mouse select) to be highlighted
     std::deque<AbsoluteRect> selected_character_rects;
@@ -71,6 +75,14 @@ public:
     // text selection (depending on `mark_end` value)
     bool should_show_text_selection_marker = false;
     bool mark_end = true;
+    std::wstring last_opened_file_path = L"";
+    bool was_set_to_null = false;
+    std::optional<float> same_width_mode_first_page_width = {};
+
+    // when filling the page rects, it is possible that the page dimensions are not yet loaded
+    // in that case, needs_refill will be set to true and we will refill the page rects once
+    // the page dimensions are loaded
+    bool needs_refill = false;
 
     DocumentView(DatabaseManager* db_manager, DocumentManager* document_manager, CachedChecksummer* checksummer);
     ~DocumentView();
@@ -82,7 +94,7 @@ public:
     void set_book_state(OpenedBookState state);
     virtual bool set_offsets(float new_offset_x, float new_offset_y, bool force = false);
     bool set_pos(AbsoluteDocumentPos pos);
-    void set_virtual_pos(VirtualPos pos);
+    void set_virtual_pos(VirtualPos pos, bool force=false);
     Document* get_document();
     bool is_ruler_mode();
     void exit_ruler_mode();
@@ -112,6 +124,7 @@ public:
     std::optional<PdfLink> get_link_in_pos(WindowPos pos);
     int get_highlight_index_in_pos(WindowPos pos);
     void get_text_selection(AbsoluteDocumentPos selection_begin, AbsoluteDocumentPos selection_end, bool is_word_selection, std::deque<AbsoluteRect>& selected_characters, std::wstring& text_selection);
+    void get_line_selection(AbsoluteDocumentPos selection_begin, AbsoluteDocumentPos selection_end, std::deque<AbsoluteRect>& selected_characters, std::wstring& text_selection);
     void add_mark(char symbol);
     std::string add_bookmark(std::wstring desc);
     std::string add_highlight(AbsoluteDocumentPos selection_begin, AbsoluteDocumentPos selection_end, char type);
@@ -149,9 +162,9 @@ public:
     float get_max_valid_x(bool relenting);
     float get_min_valid_x(bool relenting);
 
-    virtual float set_zoom_level(float zl, bool should_exit_auto_resize_mode);
-    virtual float zoom_in(float zoom_factor = ZOOM_INC_FACTOR);
-    virtual float zoom_out(float zoom_factor = ZOOM_INC_FACTOR);
+    virtual float set_zoom_level(float zl, bool should_exit_auto_resize_mode, bool readjust=true);
+    virtual float zoom_in(float zoom_factor = ZOOM_INC_FACTOR, bool readjust=true);
+    virtual float zoom_out(float zoom_factor = ZOOM_INC_FACTOR, bool readjust=true);
     float zoom_in_cursor(WindowPos mouse_pos, float zoom_factor = ZOOM_INC_FACTOR);
     float zoom_out_cursor(WindowPos mouse_pos, float zoom_factor = ZOOM_INC_FACTOR);
     bool move_absolute(float dx, float dy, bool force = false);
@@ -252,9 +265,9 @@ public:
 
     ScratchPad();
     bool set_offsets(float new_offset_x, float new_offset_y, bool force = false);
-    float set_zoom_level(float zl, bool should_exit_auto_resize_mode);
-    float zoom_in(float zoom_factor = ZOOM_INC_FACTOR);
-    float zoom_out(float zoom_factor = ZOOM_INC_FACTOR);
+    float set_zoom_level(float zl, bool should_exit_auto_resize_mode, bool readjust=true);
+    float zoom_in(float zoom_factor = ZOOM_INC_FACTOR, bool readjust=true);
+    float zoom_out(float zoom_factor = ZOOM_INC_FACTOR, bool readjust=true);
 
     std::vector<int> get_intersecting_drawing_indices(AbsoluteRect selection);
     std::vector<int> get_intersecting_pixmap_indices(AbsoluteRect selection);

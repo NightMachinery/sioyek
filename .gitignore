@@ -344,6 +344,7 @@ healthchecksdb
 sioyek-release/*
 linux-deploy-binaries/*
 build/*
+.build
 *.zip
 *.sln
 *.vcxproj
@@ -384,3 +385,15 @@ CMakeCache.txt
 .qt_plugins/*
 .qt/*
 .DS_STORE
+tutorial/*.blg
+
+xcodebuild/*
+
+#Nix generated
+result
+flake*
+*.nix
+
+# ctags
+tags
+.vscode

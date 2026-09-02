@@ -1,16 +1,10 @@
 #pragma once
 
-#include <iostream>
 #include <vector>
 #include <string>
-#include <fstream>
-#include <sstream>
-#include <unordered_map>
-#include <thread>
 #include <mutex>
 #include <optional>
 #include <utility>
-#include <memory>
 #include <array>
 
 //#include <qopenglfunctions_3_1.h>
@@ -199,13 +193,14 @@ protected:
     void enable_stencil();
     void write_to_stencil();
     void draw_stencil_rects(const std::vector<NormalizedWindowRect>& window_rects);
-    void draw_stencil_rects(int page, const std::vector<PagelessDocumentRect>& rects);
+    void draw_stencil_rects(int page, const std::vector<PagelessDocumentRect>& rects, bool in_overview = false);
     void use_stencil_to_write(bool eq);
     void disable_stencil();
 
     void render_transparent_background();
 
 public:
+    bool is_helper_waiting_for_render = false;
     std::optional<QImage> cached_framebuffer;
     int last_cache_num_drawings = -1;
     float last_cache_offset_x = -1;

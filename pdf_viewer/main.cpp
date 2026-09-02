@@ -1,17 +1,11 @@
 #include <iostream>
 #include <vector>
 #include <string>
-#include <regex>
 #include <fstream>
-#include <sstream>
-#include <unordered_map>
-#include <thread>
 #include <mutex>
 #include <optional>
 #include <utility>
-#include <memory>
 #include <filesystem>
-#include <map>
 
 #ifdef SIOYEK_ANDROID
 #include <QtCore/private/qandroidextras_p.h>
@@ -27,7 +21,7 @@
 #include <qopenglfunctions.h>
 #include <qopengl.h>
 #include <qwindow.h>
-#include <qkeyevent.h>
+#include <QKeyEvent>
 #include <qlineedit.h>
 #include <qtreeview.h>
 #include <qsortfilterproxymodel.h>
@@ -65,13 +59,12 @@
 #include "database.h"
 #include "book.h"
 #include "utils.h"
-#include "ui.h"
 #include "pdf_renderer.h"
+#include "ui.h"
 #include "document.h"
 #include "document_view.h"
 #include "pdf_view_opengl_widget.h"
 #include "config.h"
-#include "utf8.h"
 #include "main_widget.h"
 #include "path.h"
 #include "RunGuard.h"
@@ -126,6 +119,7 @@ int next_window_id = 0;
 std::vector<MainWidget*> windows;
 QString global_font_family;
 
+extern bool RESTORE_ALL_WINDOWS_ON_STARTUP;
 extern bool VERBOSE;
 extern bool USE_SYSTEM_THEME;
 extern std::wstring TAG_FONT_FACE;
@@ -138,24 +132,39 @@ extern std::wstring STARTUP_COMMANDS;
 extern bool SHOULD_LAUNCH_NEW_WINDOW;
 extern bool SHOULD_LAUNCH_NEW_INSTANCE;
 extern bool SHOULD_CHECK_FOR_LATEST_VERSION_ON_STARTUP;
+extern bool SHOULD_LOAD_TUTORIAL_WHEN_NO_OTHER_FILE;
 extern std::wstring SHARED_DATABASE_PATH;
 extern std::wstring SEARCH_URLS[26];
 extern std::wstring PAPERS_FOLDER_PATH;
 extern bool NO_AUTO_CONFIG;
 extern bool DEFAULT_DARK_MODE;
+extern int NUM_CACHED_PAGES;
+extern bool DISABLE_CURSOR_BLINKING;
 
-std::wstring strip_uri(std::wstring pdf_file_name) {
+std::wstring strip_uri(std::wstring pdf_file_name, std::optional<int>* out_page) {
 
-    if (pdf_file_name.size() > 1) {
-        if ((pdf_file_name[0] == '"') && (pdf_file_name[pdf_file_name.size() - 1] == '"')) {
-            pdf_file_name = pdf_file_name.substr(1, pdf_file_name.size() - 2);
-        }
-        // support URIs like this: file:///home/user/file.pdf
-        if (QString::fromStdWString(pdf_file_name).startsWith("file://")) {
-            return pdf_file_name.substr(7, pdf_file_name.size() - 7);
-        }
+    QString pdf_file_name_qstring = QString::fromStdWString(pdf_file_name);
+    if (pdf_file_name_qstring.size() > 2 && pdf_file_name_qstring[0] == '"' && pdf_file_name_qstring[pdf_file_name_qstring.size() - 1] == '"') {
+        pdf_file_name_qstring = pdf_file_name_qstring.mid(1, pdf_file_name_qstring.size() - 2);
     }
-    return pdf_file_name;
+
+    if (pdf_file_name_qstring.startsWith("file:")) {
+        QUrl url = QUrl::fromUserInput(pdf_file_name_qstring, QString(), QUrl::AssumeLocalFile);
+        if (!url.isLocalFile()) return pdf_file_name_qstring.toStdWString();
+
+        if (out_page) {
+            QUrlQuery fragment_query{url.fragment()};
+
+            bool ok;
+            int page = fragment_query.queryItemValue("page", QUrl::FullyDecoded).toInt(&ok);
+            if (ok) *out_page = page - 1;
+        }
+
+        return url.path().toStdWString();
+    }
+    else{
+        return pdf_file_name_qstring.toStdWString();
+    }
 }
 
 QStringList convert_arguments(QStringList input_args) {
@@ -173,7 +182,7 @@ QStringList convert_arguments(QStringList input_args) {
 
     for (auto arg : input_args) {
         if (arg == path_arg) {
-            std::wstring path_wstring = strip_uri(arg.toStdWString());
+            std::wstring path_wstring = strip_uri(arg.toStdWString(), {});
             Path path_object(path_wstring);
             output_args.push_back(QString::fromStdWString(path_object.get_path()));
         }
@@ -224,6 +233,11 @@ void configure_paths() {
 
 
 #ifdef Q_OS_MACOS
+    Path mac_resources_path = parent_path.slash(L"..").slash(L"Resources");
+    shader_path = mac_resources_path.slash(L"shaders");
+    default_config_path = mac_resources_path.slash(L"prefs.config");
+    default_keys_path = mac_resources_path.slash(L"keys.config");
+    tutorial_path = mac_resources_path.slash(L"tutorial.pdf");
     Path mac_home_path(QDir::homePath().toStdWString());
     Path mac_standard_config_path = mac_home_path.slash(L".config").slash(L"sioyek");
     user_keys_paths.push_back(mac_standard_config_path.slash(L"keys_user.config"));
@@ -254,15 +268,18 @@ void configure_paths() {
     last_opened_file_address_path = standard_data_path.slash(L"last_document_path.txt");
     shader_path = read_only_data_path.slash(L"shaders");
 #else
-    char* APPDIR = std::getenv("XDG_CONFIG_HOME");
+    char* APPDIR = std::getenv("XDG_DATA_HOME");
     Path linux_home_path(QDir::homePath().toStdWString());
 
     if (!APPDIR) {
         APPDIR = std::getenv("HOME");
+        standard_data_path = Path(utf8_decode(APPDIR));
+        standard_data_path = standard_data_path.slash(L".local").slash(L"share");
+    } else {
+        standard_data_path = Path(utf8_decode(APPDIR));
     }
 
-    standard_data_path = Path(utf8_decode(APPDIR));
-    standard_data_path = standard_data_path.slash(L".local").slash(L"share").slash(L"Sioyek");
+    standard_data_path = standard_data_path.slash(L"sioyek");
     standard_data_path.create_directories();
 
     default_config_path = parent_path.slash(L"prefs.config");
@@ -295,9 +312,11 @@ void configure_paths() {
 
     standard_data_path.create_directories();
 
+#ifndef Q_OS_MACOS
     default_config_path = parent_path.slash(L"prefs.config");
     default_keys_path = parent_path.slash(L"keys.config");
     tutorial_path = parent_path.slash(L"tutorial.pdf");
+#endif
 
 #if defined(NON_PORTABLE) || defined(Q_OS_MACOS)
     user_config_paths.push_back(standard_data_path.slash(L"prefs_user.config"));
@@ -443,13 +462,35 @@ MainWidget* handle_args(const QStringList& arguments, QLocalSocket* origin=nullp
     else {
         if (windows[0]->doc() == nullptr) {
             // when no file is specified, and no current file is open, use the last opened file or tutorial
-            std::vector<std::wstring> last_opened_file_paths = get_last_opened_file_name();
-            if (last_opened_file_paths.size() > 0) {
-                pdf_file_name = last_opened_file_paths[0];
-                windows[0]->open_tabs(last_opened_file_paths);
+            if (RESTORE_ALL_WINDOWS_ON_STARTUP) {
+                std::vector<WindowState> saved_states = get_last_saved_windows_states();
+                if (!saved_states.empty()) {
+                    if (saved_states[0].tabs.size() > 0) {
+                        pdf_file_name = saved_states[0].tabs[0];
+                        windows[0]->open_tabs(saved_states[0].tabs);
+                    }
+                    if (!saved_states[0].geometry_hex.empty()) {
+                        windows[0]->restoreGeometry(QByteArray::fromHex(QByteArray::fromStdString(saved_states[0].geometry_hex)));
+                    }
+                    for (size_t i = 1; i < saved_states.size(); ++i) {
+                        if (saved_states[i].tabs.size() > 0) {
+                            MainWidget::create_restored_window(windows[0], saved_states[i]);
+                        }
+                    }
+                }
+                else if (SHOULD_LOAD_TUTORIAL_WHEN_NO_OTHER_FILE) {
+                    pdf_file_name = tutorial_path.get_path();
+                }
             }
             else {
-                pdf_file_name = tutorial_path.get_path();
+                std::vector<std::wstring> last_opened_file_paths = get_last_opened_file_name();
+                if (last_opened_file_paths.size() > 0) {
+                    pdf_file_name = last_opened_file_paths[0];
+                    windows[0]->open_tabs(last_opened_file_paths);
+                }
+                else if (SHOULD_LOAD_TUTORIAL_WHEN_NO_OTHER_FILE) {
+                    pdf_file_name = tutorial_path.get_path();
+                }
             }
         }
     }
@@ -490,7 +531,7 @@ MainWidget* handle_args(const QStringList& arguments, QLocalSocket* origin=nullp
         y_loc = parser->value("yloc").toFloat();
     }
 
-    pdf_file_name = strip_uri(pdf_file_name);
+    pdf_file_name = strip_uri(pdf_file_name, &page);
 
     if ((pdf_file_name.size() > 0) && (!QFile::exists(QString::fromStdWString(pdf_file_name)))) {
 #ifdef SIOYEK_ANDROID
@@ -543,7 +584,10 @@ MainWidget* handle_args(const QStringList& arguments, QLocalSocket* origin=nullp
     if (parser->isSet("inverse-search")) {
         if (target_window) {
             target_window->set_inverse_search_command(parser->value("inverse-search").toStdWString());
-            target_window->raise();
+            bool nofocus = parser->isSet("nofocus");
+            if (!nofocus){
+                target_window->raise();
+            }
             //target_window->activateWindow();
         }
     }
@@ -559,12 +603,6 @@ MainWidget* handle_args(const QStringList& arguments, QLocalSocket* origin=nullp
         }
 
         target_window->execute_macro_from_origin(command_string.toStdWString(), origin);
-    }
-
-    if (parser->isSet("focus-text")) {
-        QString text = parser->value("focus-text");
-        int page = parser->value("focus-text-page").toInt();
-        target_window->focus_text(page, text.toStdWString());
     }
 
     // if no file is specified, use the previous file
@@ -600,11 +638,18 @@ MainWidget* handle_args(const QStringList& arguments, QLocalSocket* origin=nullp
         if ((target_window->doc() == nullptr) || (target_window->doc()->get_path() != pdf_file_name)) {
             should_open_document = true;
         }
-        if (should_open_document) {
+        if (should_open_document && !pdf_file_name.empty()) {
             target_window->push_state();
             target_window->open_document(pdf_file_name);
         }
     }
+
+    if (parser->isSet("focus-text")) {
+        QString text = parser->value("focus-text");
+        int page = parser->value("focus-text-page").toInt();
+        target_window->focus_text(page, text.toStdWString());
+    }
+
 
     invalidate_render();
 
@@ -613,7 +658,11 @@ MainWidget* handle_args(const QStringList& arguments, QLocalSocket* origin=nullp
 }
 
 void focus_on_widget(QWidget* widget) {
+#ifdef Q_OS_WIN
     widget->activateWindow();
+#else
+    widget->raise();
+#endif
     widget->setWindowState(widget->windowState() & ~Qt::WindowMinimized | Qt::WindowActive);
 }
 
@@ -670,7 +719,19 @@ int main(int argc, char* args[]) {
     OpenWithApplication app(argc, args);
 
     int font_id = QFontDatabase::addApplicationFont(":/resources/fonts/JetBrainsMono.ttf");
-    global_font_family = QFontDatabase::applicationFontFamilies(font_id).at(0);
+
+    if (font_id == -1) {
+        qDebug() << "Failed to load font";
+        QFile fontFile(":/resources/fonts/JetBrainsMono.ttf");
+        if (!fontFile.exists()) {
+            qDebug() << "Font file not found in resources!";
+        }
+        // Fallback to a system font
+        global_font_family = "Arial";
+    } else {
+        global_font_family = QFontDatabase::applicationFontFamilies(font_id).at(0);
+    }
+
     if (TAG_FONT_FACE.size() == 0) {
         TAG_FONT_FACE = global_font_family.toStdWString();
     }
@@ -711,7 +772,7 @@ int main(int argc, char* args[]) {
     verify_paths();
 
     // should we launche a new instance each time the user opens a PDF or should we reuse the previous instance
-    bool use_single_instance = (!SHOULD_LAUNCH_NEW_INSTANCE) && (!SHOULD_LAUNCH_NEW_WINDOW);
+    bool use_single_instance = (!SHOULD_LAUNCH_NEW_INSTANCE);
 
     if (should_reuse_instance(argc, args)) {
         use_single_instance = true;
@@ -721,8 +782,20 @@ int main(int argc, char* args[]) {
     }
 
 #ifndef SIOYEK_ANDROID
+    std::string instance_name_string = "sioyek";
     char* instance_name = get_argv_value(argc, args, "--instance-name");
-    RunGuard guard(instance_name ? instance_name : "sioyek");
+
+    if (instance_name) {
+        instance_name_string = instance_name;
+    }
+
+    if (instance_name == nullptr && (!use_single_instance)) {
+        std::wstring instance_uuid = new_uuid();
+        instance_name_string = "sioyek_" + utf8_encode(instance_uuid);
+        std::wcout << L"instance name: " << utf8_decode(instance_name_string) << L"\n";
+    }
+
+    RunGuard guard(QString::fromStdString(instance_name_string));
     if (!guard.isPrimary()) {
         QStringList sent_args = convert_arguments(app.arguments());
         bool should_wait = parser->isSet("wait-for-response");
@@ -741,6 +814,7 @@ int main(int argc, char* args[]) {
 
     QCoreApplication::setApplicationName(QString::fromStdWString(APPLICATION_NAME));
     QCoreApplication::setApplicationVersion(QString::fromStdString(APPLICATION_VERSION));
+    app.setDesktopFileName(QString::fromStdWString(APPLICATION_NAME));
 
     QStringList positional_args = parser->positionalArguments();
     delete parser;
@@ -787,6 +861,10 @@ int main(int argc, char* args[]) {
 
     bool quit = false;
 
+    PdfRenderer* pdf_renderer = new PdfRenderer(4, &quit, mupdf_context);
+    pdf_renderer->set_num_cached_pages(NUM_CACHED_PAGES);
+    pdf_renderer->start_threads();
+
     qDebug() << "SIOYEK";
     InputHandler input_handler(default_keys_path, user_keys_paths, command_manager);
 
@@ -805,7 +883,7 @@ int main(int argc, char* args[]) {
     QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
 
 
-    MainWidget* main_widget = new MainWidget(mupdf_context, &db_manager, &document_manager, &config_manager, command_manager, &input_handler, &checksummer, &quit);
+    MainWidget* main_widget = new MainWidget(mupdf_context, &db_manager, &document_manager, &config_manager, command_manager, &input_handler, &checksummer, &quit, pdf_renderer);
     windows.push_back(main_widget);
 
 #ifndef SIOYEK_ANDROID
@@ -858,15 +936,17 @@ int main(int argc, char* args[]) {
 
     main_widget->show();
 
-    handle_args(app.arguments());
-    main_widget->execute_macro_if_enabled(STARTUP_COMMANDS);
-
-    //main_widget->run_multiple_commands(STARTUP_COMMANDS);
-
     // load input file from `QFileOpenEvent` for macOS drag and drop & "open with"
     QObject::connect(&app, &OpenWithApplication::file_ready, [&main_widget](const QString& file_name) {
         handle_args(QStringList() << QCoreApplication::applicationFilePath() << file_name);
         });
+
+    QCoreApplication::processEvents();
+
+    handle_args(app.arguments());
+    main_widget->execute_macro_if_enabled(STARTUP_COMMANDS);
+
+    //main_widget->run_multiple_commands(STARTUP_COMMANDS);
 
     // live reload the config files, no need to live reload on android because we are not changing config files anyway
 #ifndef SIOYEK_ANDROID
@@ -895,6 +975,9 @@ int main(int argc, char* args[]) {
         check_for_updates(main_widget, APPLICATION_VERSION);
     }
 
+    if (DISABLE_CURSOR_BLINKING){
+        QApplication::setCursorFlashTime(0);
+    }
     app.exec();
 
     quit = true;
@@ -906,6 +989,9 @@ int main(int argc, char* args[]) {
     for (size_t i = 0; i < windows_to_delete.size(); i++) {
         delete windows_to_delete[i];
     }
+
+    pdf_renderer->join_threads();
+    delete pdf_renderer;
 
     return 0;
 }

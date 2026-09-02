@@ -73,13 +73,18 @@ memoryKey(generateKeyHash(key, "_sharedMemKey"))
 
 RunGuard::~RunGuard()
 {
+    bool was_server = false;
     memory->lock();
     if (server) {
+        was_server = true;
         server->close();
         delete server;
         server = nullptr;
     }
     memory->unlock();
+    if (was_server){
+        delete memory;
+    }
 }
 
 bool RunGuard::isPrimary()

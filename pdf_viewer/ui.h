@@ -17,7 +17,7 @@
 #include <qopenglfunctions.h>
 #include <qopengl.h>
 #include <qwindow.h>
-#include <qkeyevent.h>
+#include <QKeyEvent>
 #include <qinputmethod.h>
 #include <qlineedit.h>
 #include <qtreeview.h>
@@ -122,7 +122,6 @@ protected:
 
 
 
-    virtual QAbstractItemView* get_view();
 
     QLineEdit* line_edit = nullptr;
     //QSortFilterProxyModel* proxy_model = nullptr;
@@ -147,12 +146,15 @@ protected:
 public:
 
 
+    virtual QAbstractItemView* get_view();
     void set_filter_column_index(int index);
     std::optional<QModelIndex> get_selected_index();
     virtual std::wstring get_selected_text();
     bool eventFilter(QObject* obj, QEvent* event) override;
     void simulate_move_down();
     void simulate_move_up();
+    void simulate_move_left();
+    void simulate_move_right();
     void simulate_page_down();
     void simulate_page_up();
     void simulate_end();
@@ -233,6 +235,7 @@ private:
     std::function<void(T*)> on_delete_function = nullptr;
     std::function<void(T*)> on_edit_function = nullptr;
     int n_cols = 1;
+    bool last_column_fixed = false;
 
 protected:
 
@@ -250,10 +253,12 @@ public:
         int selected_index,
         std::function<void(T*)> on_done,
         MainWidget* parent,
-        std::function<void(T*)> on_delete_function = nullptr) : BaseSelectorWidget(new QTableView(), fuzzy, nullptr, parent),
+        std::function<void(T*)> on_delete_function = nullptr,
+        bool last_column_fixed = false) : BaseSelectorWidget(new QTableView(), fuzzy, nullptr, parent),
         values(values),
         on_done(on_done),
-        on_delete_function(on_delete_function)
+        on_delete_function(on_delete_function),
+        last_column_fixed(last_column_fixed)
     {
         item_strings = table[0];
         QVector<QString> q_string_list;
@@ -300,7 +305,12 @@ public:
                 table_view->horizontalHeader()->setSectionResizeMode(i, QHeaderView::Stretch);
             }
 
-            table_view->horizontalHeader()->setSectionResizeMode(table.size() - 1, QHeaderView::ResizeToContents);
+            if (last_column_fixed) {
+                table_view->horizontalHeader()->setSectionResizeMode(table.size() - 1, QHeaderView::Fixed);
+            }
+            else {
+                table_view->horizontalHeader()->setSectionResizeMode(table.size() - 1, QHeaderView::ResizeToContents);
+            }
         }
 
         table_view->horizontalHeader()->hide();
@@ -311,6 +321,7 @@ public:
             table_view->verticalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
         }
 
+        on_config_file_changed();
         if (selected_index != -1) {
             table_view->scrollTo(this->proxy_model->mapFromSource(table_view->currentIndex()), QAbstractItemView::EnsureVisible);
         }
@@ -679,14 +690,28 @@ public:
 
         root = expand_home_dir(root);
         QDir directory(root);
-        QStringList res = directory.entryList({ prefix + "*" });
-        if (res.size() == 0) {
-            std::string encoded_prefix = utf8_encode(prefix.toStdWString());
-            QStringList all_directory_files = directory.entryList();
+        QFileInfoList entry_list = directory.entryInfoList(
+                { prefix + "*" },
+                QDir::NoDot|QDir::Dirs|QDir::Files|QDir::Readable
+            );
+        QStringList result {};
+        QString sep = QDir::separator();
+
+        for (const auto& entry : entry_list) {
+            if (entry.isDir()) {
+                result.push_back(entry.fileName() + sep);
+            }
+            else {
+                result.push_back(entry.fileName());
+            }
+        }
+        if (result.size() == 0) {
+            const std::string encoded_prefix = utf8_encode(prefix.toStdWString());
+            const QFileInfoList all_directory_files = directory.entryInfoList();
             std::vector<std::pair<QString, int>> file_scores;
 
-            for (auto file : all_directory_files) {
-                std::string encoded_file = utf8_encode(file.toStdWString());
+            for (const auto& file : all_directory_files) {
+                std::string encoded_file = utf8_encode(file.fileName().toStdWString());
                 int score = 0;
                 if (REGEX_SEARCHING) {
                     score = bool_regex_match(QString::fromStdString(encoded_prefix), QString::fromStdString(encoded_file)) ? 100 : 0;
@@ -697,18 +722,19 @@ public:
                 else {
                     fts::fuzzy_match(encoded_prefix.c_str(), encoded_file.c_str(), score);
                 }
-                file_scores.push_back(std::make_pair(file, score));
+                const auto filename = (file.isDir() ? (file.fileName() + sep) : file.fileName());
+                file_scores.push_back(std::make_pair(filename, score));
             }
             std::sort(file_scores.begin(), file_scores.end(), [](std::pair<QString, int> lhs, std::pair<QString, int> rhs) {
                 return lhs.second > rhs.second;
                 });
-            for (auto [file, score] : file_scores) {
+            for (const auto& [file, score] : file_scores) {
                 if (score > 0) {
-                    res.push_back(file);
+                    result.push_back(file);
                 }
             }
         }
-        return res;
+        return result;
     }
 
     void on_select(const QModelIndex& index) {
@@ -722,7 +748,8 @@ public:
             parentWidget()->setFocus();
         }
         else {
-            line_edit->setText(full_path + sep);
+            QString canonical_path { QDir(full_path).canonicalPath() };
+            line_edit->setText(canonical_path + sep);
         }
     }
 };
@@ -954,13 +981,13 @@ private:
 };
 
 
-std::wstring select_document_file_name();
-std::wstring select_json_file_name();
-std::wstring select_any_file_name();
-std::wstring select_command_file_name(std::string command_name);
-std::wstring select_new_json_file_name();
-std::wstring select_new_pdf_file_name();
-std::wstring select_command_folder_name();
+std::wstring select_document_file_name(std::optional<QString> root_dir={});
+std::wstring select_json_file_name(std::optional<QString> root_dir={});
+std::wstring select_any_file_name(std::optional<QString> root_dir={});
+std::wstring select_command_file_name(std::string command_name, std::optional<QString> root_dir={});
+std::wstring select_new_json_file_name(std::optional<QString> root_dir={});
+std::wstring select_new_pdf_file_name(std::optional<QString> root_dir={});
+std::wstring select_command_folder_name(std::optional<QString> root_dir={});
 
 //QWidget* color3_configurator_ui(MainWidget* main_widget, void* location);
 //QWidget* color4_configurator_ui(MainWidget* main_widget, void* location);

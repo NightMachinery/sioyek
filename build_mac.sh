@@ -18,7 +18,7 @@ echo "MAKE_PARALLEL set to $MAKE_PARALLEL"
 
 cd mupdf
 #make USE_SYSTEM_HARFBUZZ=yes USE_SYSTEM_GLUT=yes SYS_GLUT_CFLAGS="${sys_glut_clfags}" SYS_GLUT_LIBS="${sys_glut_libs}" SYS_HARFBUZZ_CFLAGS="${sys_harfbuzz_clfags}" SYS_HARFBUZZ_LIBS="${sys_harfbuzz_libs}" -j 4
-make XLIBS="-L${LIBRARY_PATH}" -j$MAKE_PARALLEL
+make HAVE_GLUT=no XLIBS="-L${LIBRARY_PATH}" -j$MAKE_PARALLEL
 cd ..
 
 sed -Ei '' "s/QMAKE_MACOSX_DEPLOYMENT_TARGET.=.[0-9]+/QMAKE_MACOSX_DEPLOYMENT_TARGET = $(sw_vers -productVersion | cut -d. -f1)/" pdf_viewer_build_config.pro
@@ -39,13 +39,13 @@ make -j$MAKE_PARALLEL
 rm -rf build 2> /dev/null
 mkdir build
 mv sioyek.app build/
-cp -r pdf_viewer/shaders build/sioyek.app/Contents/MacOS/shaders
+cp -r pdf_viewer/shaders build/sioyek.app/Contents/Resources/shaders
 
-cp pdf_viewer/prefs.config build/sioyek.app/Contents/MacOS/prefs.config
-cp pdf_viewer/prefs_user.config build/sioyek.app/Contents/MacOS/prefs_user.config
-cp pdf_viewer/keys.config build/sioyek.app/Contents/MacOS/keys.config
-cp pdf_viewer/keys_user.config build/sioyek.app/Contents/MacOS/keys_user.config
-cp tutorial.pdf build/sioyek.app/Contents/MacOS/tutorial.pdf
+cp pdf_viewer/prefs.config build/sioyek.app/Contents/Resources/prefs.config
+cp pdf_viewer/prefs_user.config build/sioyek.app/Contents/Resources/prefs_user.config
+cp pdf_viewer/keys.config build/sioyek.app/Contents/Resources/keys.config
+cp pdf_viewer/keys_user.config build/sioyek.app/Contents/Resources/keys_user.config
+cp tutorial.pdf build/sioyek.app/Contents/Resources/tutorial.pdf
 
 if test -z "${incremental_p}" ; then
 	# Capture the current PATH
@@ -65,5 +65,6 @@ if test -z "${incremental_p}" ; then
     echo waiting...; while pgrep XProtect; do sleep 3; done;
   fi
   macdeployqt build/sioyek.app -dmg
+  codesign --force --deep --sign - build/sioyek.app
   zip -r sioyek-release-mac.zip build/sioyek.dmg
 fi

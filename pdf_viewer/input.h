@@ -23,7 +23,8 @@ enum RequirementType {
     Folder,
     Rect,
     Point,
-    Generic
+    Generic,
+    Password
 };
 
 struct Requirement {
@@ -58,6 +59,7 @@ public:
     virtual void set_generic_requirement(QVariant value);
     virtual void handle_generic_requirement();
     virtual void set_num_repeats(int nr);
+    virtual int get_num_repeats();
     virtual std::vector<char> special_symbols();
     virtual void pre_perform();
     virtual bool pushes_state();
@@ -72,11 +74,13 @@ public:
     virtual bool is_holdable();
     virtual void on_key_hold();
     virtual void on_text_change(const QString& new_text);
+    virtual std::optional<QString> get_file_path_requirement_root_dir();
 
     void set_next_requirement_with_string(std::wstring str);
 
     virtual void run();
     virtual std::string get_name();
+    virtual std::string get_pending_name();
     virtual std::string get_human_readable_name();
     virtual std::wstring get_text_default_value();
     virtual ~Command();
@@ -157,6 +161,7 @@ private:
     std::string get_key_name_from_key_code(int key_code) const;
 
     void add_command_key_mappings(InputParseTreeNode* root, std::unordered_map<std::string, std::vector<std::string>>& map, std::vector<InputParseTreeNode*> prefix) const;
+    void get_commands_with_current_prefix_helper(InputParseTreeNode* node, std::vector<InputParseTreeNode*> prefix, std::unordered_map<std::string, std::vector<std::string>>& map) const;
 public:
     //char create_link_sumbol = 0;
     //char create_bookmark_symbol = 0;
@@ -172,6 +177,8 @@ public:
     std::optional<Path> get_or_create_user_keys_path();
     std::vector<Path> get_all_user_keys_paths();
     std::unordered_map<std::string, std::vector<std::string>> get_command_key_mappings() const;
+    std::unordered_map<std::string, std::vector<std::string>> get_commands_with_current_prefix() const;
+    bool is_on_final_or_root_node() const;
 
 };
 

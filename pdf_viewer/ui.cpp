@@ -26,32 +26,32 @@ extern float TTS_RATE;
 extern float MENU_SCREEN_WDITH_RATIO;
 extern bool SHOW_MOST_RECENT_COMMANDS_FIRST;
 
-std::wstring select_command_file_name(std::string command_name) {
-    if (command_name == "open_document") {
-        return select_document_file_name();
+std::wstring select_command_file_name(std::string command_name, std::optional<QString> root_dir) {
+    if (command_name == "open_document" || command_name == "open_document_in_directory") {
+        return select_document_file_name(root_dir);
     }
     else if (command_name == "source_config") {
-        return select_any_file_name();
+        return select_any_file_name(root_dir);
     }
     else {
-        return select_any_file_name();
+        return select_any_file_name(root_dir);
     }
 }
 
-std::wstring select_command_folder_name() {
-    QString dir_name = QFileDialog::getExistingDirectory(nullptr, "Select Folder");
+std::wstring select_command_folder_name(std::optional<QString> root_dir) {
+    QString dir_name = QFileDialog::getExistingDirectory(nullptr, "Select Folder", root_dir.value_or(QString()));
     return dir_name.toStdWString();
 }
 
-std::wstring select_document_file_name() {
+std::wstring select_document_file_name(std::optional<QString> root_dir) {
     if (DEFAULT_OPEN_FILE_PATH.size() == 0) {
 
-        QString file_name = QFileDialog::getOpenFileName(nullptr, "Select Document", "", "Documents (*.pdf *.epub *.cbz)");
+        QString file_name = QFileDialog::getOpenFileName(nullptr, "Select Document", root_dir.value_or(""), "Documents (*.pdf *.epub *.cbz)");
         return file_name.toStdWString();
     }
     else {
 
-        QFileDialog fd = QFileDialog(nullptr, "Select Document", "", "Documents (*.pdf *.epub *.cbz)");
+        QFileDialog fd = QFileDialog(nullptr, "Select Document", root_dir.value_or(""), "Documents (*.pdf *.epub *.cbz)");
         fd.setDirectory(QString::fromStdWString(DEFAULT_OPEN_FILE_PATH));
         if (fd.exec()) {
 
@@ -65,23 +65,23 @@ std::wstring select_document_file_name() {
 
 }
 
-std::wstring select_json_file_name() {
-    QString file_name = QFileDialog::getSaveFileName(nullptr, "Select Document", "", "Documents (*.json )");
+std::wstring select_json_file_name(std::optional<QString> root_dir) {
+    QString file_name = QFileDialog::getSaveFileName(nullptr, "Select Document", root_dir.value_or(""), "Documents (*.json )");
     return file_name.toStdWString();
 }
 
-std::wstring select_any_file_name() {
-    QString file_name = QFileDialog::getSaveFileName(nullptr, "Select File", "", "Any (*)");
+std::wstring select_any_file_name(std::optional<QString> root_dir) {
+    QString file_name = QFileDialog::getSaveFileName(nullptr, "Select File", root_dir.value_or(""), "Any (*)");
     return file_name.toStdWString();
 }
 
-std::wstring select_new_json_file_name() {
-    QString file_name = QFileDialog::getSaveFileName(nullptr, "Select Document", "", "Documents (*.json )");
+std::wstring select_new_json_file_name(std::optional<QString> root_dir) {
+    QString file_name = QFileDialog::getSaveFileName(nullptr, "Select Document", root_dir.value_or(""), "Documents (*.json )");
     return file_name.toStdWString();
 }
 
-std::wstring select_new_pdf_file_name() {
-    QString file_name = QFileDialog::getSaveFileName(nullptr, "Select Document", "", "Documents (*.pdf )");
+std::wstring select_new_pdf_file_name(std::optional<QString> root_dir) {
+    QString file_name = QFileDialog::getSaveFileName(nullptr, "Select Document", root_dir.value_or(""), "Documents (*.pdf )");
     return file_name.toStdWString();
 }
 
@@ -1524,10 +1524,10 @@ BaseSelectorWidget::BaseSelectorWidget(QAbstractItemView* item_view, bool fuzzy,
         abstract_item_view->setVerticalScrollMode(QAbstractItemView::ScrollMode::ScrollPerPixel);
     }
 
-    QString font_face;
+    QString font_face = get_ui_font_face_name();
     if (font_face.size() > 0) {
-        abstract_item_view->setFont(get_ui_font_face_name());
-        line_edit->setFont(get_ui_font_face_name());
+        abstract_item_view->setFont(font_face);
+        line_edit->setFont(font_face);
     }
 }
 
@@ -1627,14 +1627,19 @@ bool BaseSelectorWidget::eventFilter(QObject* obj, QEvent* event) {
                 key_event->key() == Qt::Key_Left ||
                 key_event->key() == Qt::Key_Right
                 ) {
+                if (!line_edit->hasSelectedText()){
+                    bool is_tree = get_view_stylesheet_type_name() == "QTreeView";
+                    if (is_tree || (key_event->key() == Qt::Key_Down) || (key_event->key() == Qt::Key_Up)){
 #ifdef SIOYEK_QT6
-                QKeyEvent* newEvent = key_event->clone();
+                        QKeyEvent* newEvent = key_event->clone();
 #else
-                QKeyEvent* newEvent = new QKeyEvent(*key_event);
+                        QKeyEvent* newEvent = new QKeyEvent(*key_event);
 #endif
-                QCoreApplication::postEvent(get_view(), newEvent);
-                //QCoreApplication::postEvent(tree_view, key_event);
-                return true;
+                        QCoreApplication::postEvent(get_view(), newEvent);
+                        //QCoreApplication::postEvent(tree_view, key_event);
+                        return true;
+                    }
+                }
             }
             if (key_event->key() == Qt::Key_Tab) {
                 QKeyEvent* new_key_event = new QKeyEvent(key_event->type(), Qt::Key_Down, key_event->modifiers());
@@ -1657,11 +1662,13 @@ bool BaseSelectorWidget::eventFilter(QObject* obj, QEvent* event) {
                 return true;
             }
             if (((key_event->key() == Qt::Key_C) && is_control_pressed)) {
-                std::wstring text = get_selected_text();
-                if (text.size() > 0) {
-                    copy_to_clipboard(text);
+                if (!line_edit->hasSelectedText()){
+                    std::wstring text = get_selected_text();
+                    if (text.size() > 0) {
+                        copy_to_clipboard(text);
+                    }
+                    return true;
                 }
-                return true;
             }
             if (key_event->key() == Qt::Key_Return || key_event->key() == Qt::Key_Enter) {
                 std::optional<QModelIndex> selected_index = get_selected_index();
@@ -1694,6 +1701,30 @@ void BaseSelectorWidget::simulate_page_down() {
     QKeyEvent* new_key_event = new QKeyEvent(QEvent::Type::KeyPress, Qt::Key_PageDown, Qt::KeyboardModifier::NoModifier);
     QCoreApplication::postEvent(get_view(), new_key_event);
 }
+bool is_tree_view_index_last(const QModelIndex& index, QTreeView* view, bool include_chilren){
+    bool index_has_children = view->model()->rowCount(index) > 0;
+    if (include_chilren && index_has_children) return false;
+    if (index.parent().isValid()){
+        int parent_row_count = view->model()->rowCount(index.parent());
+        if (index.row() == (parent_row_count - 1)){
+            return is_tree_view_index_last(index.parent(), view, false);
+        }
+        else{
+            return false;
+        }
+    }
+    else{
+        return index.row() == view->model()->rowCount() - 1;
+    }
+}
+
+bool is_tree_view_index_first(const QModelIndex& index, QTreeView* view){
+
+    if (index.parent().isValid()){
+        return false;
+    }
+    return index.row() == 0;
+}
 
 void BaseSelectorWidget::simulate_page_up() {
     QKeyEvent* new_key_event = new QKeyEvent(QEvent::Type::KeyPress, Qt::Key_PageUp, Qt::KeyboardModifier::NoModifier);
@@ -1702,13 +1733,63 @@ void BaseSelectorWidget::simulate_page_up() {
 
 
 void BaseSelectorWidget::simulate_move_down() {
-    QKeyEvent* move_down_event = new QKeyEvent(QEvent::Type::KeyPress, Qt::Key_Down, Qt::KeyboardModifier::NoModifier);
-    QCoreApplication::postEvent(get_view(), move_down_event);
+    bool is_last = false;
+    if (dynamic_cast<QTreeView*>(get_view())){
+        QTreeView* tree_view = dynamic_cast<QTreeView*>(get_view());
+        const QModelIndex& tree_index = tree_view->currentIndex();
+        is_last = is_tree_view_index_last(tree_index, tree_view, true);
+    }
+    else{
+        is_last = get_view()->currentIndex().row() == get_view()->model()->rowCount() - 1;
+    }
+
+    if (is_last){
+        get_view()->setCurrentIndex(get_view()->model()->index(0, 0));
+    }
+    else{
+        QKeyEvent* move_down_event = new QKeyEvent(QEvent::Type::KeyPress, Qt::Key_Down, Qt::KeyboardModifier::NoModifier);
+        QCoreApplication::postEvent(get_view(), move_down_event);
+    }
+}
+
+QModelIndex get_last_tree_index(QAbstractItemModel* model, QModelIndex parent_index){
+    int row_count = model->rowCount(parent_index);
+    if (row_count == 0){
+        return parent_index;
+    }
+    else{
+        QModelIndex last_child = model->index(row_count - 1, 0, parent_index);
+        return get_last_tree_index(model, last_child);
+    }
 }
 
 void BaseSelectorWidget::simulate_move_up() {
-    QKeyEvent* move_up_event = new QKeyEvent(QEvent::Type::KeyPress, Qt::Key_Up, Qt::KeyboardModifier::NoModifier);
-    QCoreApplication::postEvent(get_view(), move_up_event);
+    bool is_first = false;
+    if (dynamic_cast<QTreeView*>(get_view())){
+        QTreeView* tree_view = dynamic_cast<QTreeView*>(get_view());
+        const QModelIndex& tree_index = tree_view->currentIndex();
+        is_first = is_tree_view_index_first(tree_index, tree_view);
+    }
+    else{
+        is_first = get_view()->currentIndex().row() == 0;
+    }
+
+    if (is_first) {
+        get_view()->setCurrentIndex(get_last_tree_index(get_view()->model(), QModelIndex()));
+    }
+    else{
+        QKeyEvent* move_up_event = new QKeyEvent(QEvent::Type::KeyPress, Qt::Key_Up, Qt::KeyboardModifier::NoModifier);
+        QCoreApplication::postEvent(get_view(), move_up_event);
+    }}
+
+void BaseSelectorWidget::simulate_move_left() {
+    QKeyEvent* move_left_event = new QKeyEvent(QEvent::Type::KeyPress, Qt::Key_Left, Qt::KeyboardModifier::NoModifier);
+    QCoreApplication::postEvent(get_view(), move_left_event);
+}
+
+void BaseSelectorWidget::simulate_move_right() {
+    QKeyEvent* move_right_event = new QKeyEvent(QEvent::Type::KeyPress, Qt::Key_Right, Qt::KeyboardModifier::NoModifier);
+    QCoreApplication::postEvent(get_view(), move_right_event);
 }
 
 QString BaseSelectorWidget::get_selected_item() {

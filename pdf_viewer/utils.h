@@ -14,7 +14,7 @@
 #include <memory>
 #include <qcommandlineparser.h>
 
-#include <qkeyevent.h>
+#include <QKeyEvent>
 
 #include <QString>
 #include <QStringList>
@@ -91,7 +91,7 @@ std::string utf8_encode(const std::wstring& decoded_str);
 bool is_rtl(int c);
 std::wstring reverse_wstring(const std::wstring& inp);
 bool parse_search_command(const std::wstring& search_command, int* out_begin, int* out_end, std::wstring* search_text);
-QStandardItemModel* get_model_from_toc(const std::vector<TocNode*>& roots);
+QStandardItemModel* get_model_from_toc(const std::vector<TocNode*>& roots, const std::vector<std::wstring>& page_labels);
 
 // given a tree of toc nodes and an array of indices, returns the node whose ith parent is indexed by the ith element
 // of the indices array. That is:
@@ -99,6 +99,7 @@ QStandardItemModel* get_model_from_toc(const std::vector<TocNode*>& roots);
 TocNode* get_toc_node_from_indices(const std::vector<TocNode*>& roots, const std::vector<int>& indices);
 
 fz_stext_char* find_closest_char_to_document_point(const std::vector<fz_stext_char*> flat_chars, fz_point document_point, int* location_index);
+fz_stext_line* find_closest_line_to_document_point(fz_stext_page* page, fz_point document_point, int* index);
 //void merge_selected_character_rects(const std::deque<fz_rect>& selected_character_rects, std::vector<fz_rect>& resulting_rects, bool touch_vertically = true);
 void split_key_string(std::wstring haystack, const std::wstring& needle, std::vector<std::wstring>& res);
 void run_command(std::wstring command, QStringList parameters, bool wait = true);
@@ -553,3 +554,9 @@ QString translate_key_mapping_to_macos(QString mapping);
 bool is_platform_meta_pressed(QKeyEvent* kevent);
 bool is_platform_control_pressed(QKeyEvent* kevent);
 std::vector<std::wstring> get_last_opened_file_name();
+struct WindowState {
+    std::string geometry_hex;
+    std::vector<std::wstring> tabs;
+};
+std::vector<WindowState> get_last_saved_windows_states();
+bool stext_page_has_lines(fz_stext_page* page);

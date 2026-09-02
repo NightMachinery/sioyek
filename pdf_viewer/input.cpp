@@ -1,3 +1,6 @@
+#include <QtCore/qcontainerfwd.h>
+#include <cstdlib>
+#include <deque>
 #include <iostream>
 #include <vector>
 #include <string>
@@ -5,19 +8,25 @@
 #include <sstream>
 
 #include <qjsondocument.h>
-#include <qkeyevent.h>
+#include <QKeyEvent>
 #include <qstring.h>
 #include <qstringlist.h>
 #include <qlocalsocket.h>
 #include <qfileinfo.h>
 #include <qclipboard.h>
+#include <qguiapplication.h>
 
+#include "coordinates.h"
 #include "utils.h"
 #include "input.h"
 #include "main_widget.h"
 #include "ui.h"
 #include "document.h"
 #include "document_view.h"
+
+#ifdef Q_OS_MACOS
+extern "C" void showLookupForString(WId winId, const char* text, double x, double y);
+#endif
 
 extern bool SHOULD_WARN_ABOUT_USER_KEY_OVERRIDE;
 extern bool USE_LEGACY_KEYBINDS;
@@ -29,6 +38,7 @@ extern std::wstring SEARCH_URLS[26];
 extern bool ALPHABETIC_LINK_TAGS;
 extern std::vector<AdditionalKeymapData> ADDITIONAL_KEYMAPS;
 
+extern std::wstring DEFAULT_OPEN_FILE_PATH;
 extern bool ADD_NEWLINES_WHEN_COPYING_TEXT;
 extern float EPUB_WIDTH;
 extern float EPUB_HEIGHT;
@@ -124,6 +134,9 @@ struct ParseState {
                     if (ch == '\\') {
                         arg.push_back('\\');
                     }
+                    if (ch == ','){
+                        arg.push_back(',');
+                    }
                     is_prev_char_backslash = false;
                 }
                 else {
@@ -153,6 +166,7 @@ struct ParseState {
             }
             return arg;
         }
+        return {};
     }
 
     bool is_valid_command_name_char(QChar c) {
@@ -461,7 +475,7 @@ public:
             for (int i = 0; i < commands.size(); i++) {
                 std::optional<Requirement> req = commands[i]->next_requirement(widget);
                 if (req) {
-                    if (req.value().type == RequirementType::Text) {
+                    if (req->type == RequirementType::Text || req->type == RequirementType::Password) {
                         commands[i]->set_text_requirement(value);
                     }
                     return;
@@ -547,12 +561,12 @@ public:
     bool requires_document() {
         if (is_modal) {
             int current_mode_index = get_current_mode_index();
-            if (current_mode_index >= 0) {
+            if (current_mode_index >= 0 && current_mode_index < commands.size()) {
                 return commands[current_mode_index]->requires_document();
             }
+            return false;
         }
         else {
-
             for (int i = 0; i < commands.size(); i++) {
                 if (commands[i]->requires_document()) {
                     return true;
@@ -633,6 +647,25 @@ public:
         }
     }
 
+    std::optional<QString> get_file_path_requirement_root_dir() override{
+        if (is_modal){
+            int mode_index = get_current_mode_index();
+            if (mode_index != -1) {
+                return commands[mode_index]->get_file_path_requirement_root_dir();
+            }
+            return "";
+        }
+        else {
+            for (int i = 0; i < commands.size(); i++) {
+                if (commands[i]->next_requirement(widget)) {
+                    return commands[i]->get_file_path_requirement_root_dir();
+                }
+            }
+            return "";
+        }
+    }
+
+
     std::optional<Requirement> next_requirement(MainWidget* widget) {
         if (is_modal && (modes.size() != commands.size())) {
             std::wcerr << L"Invalid modal command : " << raw_commands;
@@ -666,6 +699,18 @@ public:
             if (commands[index]->pushes_state()) {
                 widget->push_state();
             }
+
+            // addresses https://github.com/ahrm/sioyek/issues/1114#issuecomment-2465490589
+            // e.g. when defining a custom command like goto_beginning;fit_to_page_smart we want to pass the num_repeats to goto_beginning
+            // of course since there are multiple commands it is ambiguous which command actually gets the num_repeats, here we just pass
+            // it to the first command
+            if (index == 0 && (num_repeats > 0)) {
+                commands[index]->set_num_repeats(num_repeats);
+            }
+            else {
+                commands[index]->set_num_repeats(0);
+            }
+
             commands[index]->run();
             performed[index] = true;
         }
@@ -688,7 +733,38 @@ public:
 
     }
 
-    void perform() {
+    bool is_holdable() override {
+        if (!is_modal) {
+            return false;
+        }
+        else {
+            int mode_index = get_current_mode_index();
+            if (mode_index >= 0) {
+                return commands[mode_index]->is_holdable();
+            }
+            return false;
+        }
+    }
+
+    void perform_up() override {
+        if (is_holdable()) {
+            int mode_index = get_current_mode_index();
+            if (mode_index >= 0) {
+                commands[mode_index]->perform_up();
+            }
+        }
+    }
+
+    void on_key_hold() override {
+        if (is_holdable()) {
+            int mode_index = get_current_mode_index();
+            if (mode_index >= 0) {
+                commands[mode_index]->on_key_hold();
+            }
+        }
+    }
+
+    void perform() override {
         if (!is_modal) {
             for (int i = 0; i < commands.size(); i++) {
 
@@ -706,7 +782,8 @@ public:
 
             for (int i = 0; i < commands.size(); i++) {
                 if (mode_matches(mode_string, modes[i])) {
-                    widget->handle_command_types(std::move(commands[i]), 1);
+                    perform_subcommand(i);
+                    // widget->handle_command_types(std::move(commands[i]), 1);
                     //commands[i]->run(widget);
                     return;
                 }
@@ -798,6 +875,43 @@ public:
         }
     }
 
+    virtual void on_cancel() override{
+        int current_index = get_current_executing_command_index();
+        if (current_index != -1) {
+            commands[current_index]->on_cancel();
+        }
+
+        for (auto& command : commands) {
+            if (command->is_done) {
+                *command->is_done = true;
+            }
+        }
+    }
+
+    std::string get_pending_name() {
+        
+        if (name.size() > 0 || commands.size() == 0) {
+            return name;
+        }
+        else {
+            if (is_modal){
+                int mode_index = get_current_mode_index();
+                if (mode_index != -1) {
+                    return commands[mode_index]->get_name();
+                }
+                return "";
+            }
+            else {
+                for (int i = 0; i < commands.size(); i++) {
+                    if (commands[i]->next_requirement(widget)) {
+                        return commands[i]->get_pending_name();
+                    }
+                }
+                return "";
+            }
+        }
+    }
+
     std::string get_human_readable_name() override{
         if (name.size() > 0 || commands.size() == 0) {
             return name;
@@ -854,6 +968,10 @@ std::optional<std::wstring> Command::get_text_suggestion(int index) {
     return {};
 }
 
+std::optional<QString> Command::get_file_path_requirement_root_dir(){
+    return {};
+}
+
 void Command::perform_up() {
 }
 
@@ -874,15 +992,35 @@ void Command::handle_generic_requirement() {
 
 }
 
-AbsoluteRect get_rect_from_string(std::wstring str) {
+AbsoluteRect get_rect_from_string(std::wstring str, DocumentView* dv) {
+    bool is_window = false;
+    if (str.size() > 0 && str[0] == 'W') {
+        is_window = true;
+        str = str.substr(2);
+    }
+
     QStringList parts = QString::fromStdWString(str).split(' ');
 
-    AbsoluteRect result;
-    result.x0 = parts[0].toFloat();
-    result.y0 = parts[1].toFloat();
-    result.x1 = parts[2].toFloat();
-    result.y1 = parts[3].toFloat();
-    return result;
+    if (!is_window) {
+        AbsoluteRect result;
+        result.x0 = parts[0].toFloat();
+        result.y0 = parts[1].toFloat();
+        result.x1 = parts[2].toFloat();
+        result.y1 = parts[3].toFloat();
+        return result;
+    }
+    else {
+        NormalizedWindowRect nwr;
+        nwr.x0 = parts[0].toFloat();
+        nwr.y1 = parts[1].toFloat();
+        nwr.x1 = parts[2].toFloat();
+        nwr.y0 = parts[3].toFloat();
+        WindowRect wr = dv->normalized_to_window_rect(nwr);
+        auto top_left = dv->window_to_absolute_document_pos(wr.top_left());
+        auto bottom_right = dv->window_to_absolute_document_pos(wr.bottom_right());
+        return AbsoluteRect(top_left, bottom_right);
+    }
+
 }
 
 AbsoluteDocumentPos get_point_from_string(std::wstring str) {
@@ -898,7 +1036,7 @@ void Command::set_next_requirement_with_string(std::wstring str) {
     std::optional<Requirement> maybe_req = next_requirement(widget);
     if (maybe_req) {
         Requirement req = maybe_req.value();
-        if (req.type == RequirementType::Text) {
+        if (req.type == RequirementType::Text || req.type == RequirementType::Password) {
             set_text_requirement(str);
         }
         else if (req.type == RequirementType::Symbol) {
@@ -908,7 +1046,7 @@ void Command::set_next_requirement_with_string(std::wstring str) {
             set_file_requirement(str);
         }
         else if (req.type == RequirementType::Rect) {
-            set_rect_requirement(get_rect_from_string(str));
+            set_rect_requirement(get_rect_from_string(str, widget->main_document_view));
         }
         else if (req.type == RequirementType::Point) {
             set_point_requirement(get_point_from_string(str));
@@ -967,12 +1105,12 @@ public:
 
 };
 
-class GenericPathAndLocationCommadn : public Command {
+class GenericPathAndLocationCommand : public Command {
 public:
 
     std::optional<QVariant> target_location;
     bool is_hash = false;
-    GenericPathAndLocationCommadn(std::string name, MainWidget* w, bool is_hash_ = false) : Command(name, w) { is_hash = is_hash_; };
+    GenericPathAndLocationCommand(std::string name, MainWidget* w, bool is_hash_ = false) : Command(name, w) { is_hash = is_hash_; };
 
     std::optional<Requirement> next_requirement(MainWidget* widget) {
         if (target_location) {
@@ -1081,6 +1219,21 @@ public:
     }
 };
 
+class PasswordCommand : public TextCommand{
+    public:
+    PasswordCommand(std::string name, MainWidget* w) : TextCommand(name, w) {}
+
+    virtual std::optional<Requirement> next_requirement(MainWidget* widget) override {
+        if (text.has_value()) {
+            return {};
+        }
+        else {
+            return Requirement{ RequirementType::Password, text_requirement_name() };
+        }
+    }
+
+};
+
 class GotoMark : public SymbolCommand {
 public:
     static inline const std::string cname = "goto_mark";
@@ -1159,6 +1312,38 @@ public:
 
     bool requires_document() {
         return false;
+    }
+
+    std::string get_name() {
+        return cname;
+    }
+
+};
+
+class GotoNextTabCommand : public Command {
+public:
+    static inline const std::string cname = "goto_next_tab";
+    static inline const std::string hname = "Go to the next tab.";
+    GotoNextTabCommand(MainWidget* w) : Command(cname, w) {}
+
+    void perform() {
+        widget->goto_ith_next_tab(1);
+    }
+
+    std::string get_name() {
+        return cname;
+    }
+
+};
+
+class GotoPrevTabCommand : public Command {
+public:
+    static inline const std::string cname = "goto_prev_tab";
+    static inline const std::string hname = "Go to the previous tab.";
+    GotoPrevTabCommand(MainWidget* w) : Command(cname, w) {}
+
+    void perform() {
+        widget->goto_ith_next_tab(-1);
     }
 
     std::string get_name() {
@@ -1335,6 +1520,7 @@ public:
         if (INCREMENTAL_SEARCH) {
             widget->goto_mark('/');
         }
+        TextCommand::on_cancel();
     }
 
     void perform() {
@@ -1611,6 +1797,20 @@ public:
         QJsonDocument doc(widget->get_all_json_states());
         std::wstring json_str = utf8_decode(doc.toJson(QJsonDocument::Compact).toStdString());
         result = json_str;
+    }
+};
+
+class SetStateJsonCommand : public TextCommand {
+
+public:
+    static inline const std::string cname = "set_state_json";
+    static inline const std::string hname = "";
+    SetStateJsonCommand(MainWidget* w) : TextCommand(cname, w) {};
+
+    void perform() {
+        QByteArray json_bytes = QString::fromStdWString(text.value()).toUtf8();
+        QJsonDocument doc = QJsonDocument::fromJson(json_bytes);
+        widget->set_state(doc.object());
     }
 };
 
@@ -1976,6 +2176,7 @@ public:
         if (pending_index != -1) {
             widget->doc()->undo_pending_bookmark(pending_index);
         }
+        Command::on_cancel();
     }
 
     void perform() {
@@ -2200,10 +2401,11 @@ public:
         rect_ = value;
         BookMark incomplete_bookmark;
 
-        incomplete_bookmark.begin_x = value.x0;
-        incomplete_bookmark.begin_y = value.y0;
-        incomplete_bookmark.end_x = value.x1;
-        incomplete_bookmark.end_y = value.y1;
+        incomplete_bookmark.begin_x = std::min<float>(value.x0, value.x1);
+        incomplete_bookmark.end_x = std::max<float>(value.x0, value.x1);
+        incomplete_bookmark.begin_y = std::min<float>(value.y0, value.y1);
+        incomplete_bookmark.end_y = std::max<float>(value.y0, value.y1);
+
         incomplete_bookmark.color[0] = FREETEXT_BOOKMARK_COLOR[0];
         incomplete_bookmark.color[1] = FREETEXT_BOOKMARK_COLOR[1];
         incomplete_bookmark.color[2] = FREETEXT_BOOKMARK_COLOR[2];
@@ -2221,6 +2423,7 @@ public:
         if (pending_index != -1) {
             widget->doc()->undo_pending_bookmark(pending_index);
         }
+        Command::on_cancel();
     }
 
     void perform() {
@@ -2239,6 +2442,18 @@ public:
         widget->invalidate_render();
     }
 };
+
+class ShowMarks : public GenericGotoLocationCommand {
+public:
+    static inline const std::string cname = "show_marks";
+    static inline const std::string hname = "Show the list of the current marks in all documents.";
+    ShowMarks(MainWidget* w) : GenericGotoLocationCommand(cname, w) {};
+
+    void handle_generic_requirement() {
+        widget->handle_show_marks();
+    }
+};
+
 
 class GotoBookmarkCommand : public GenericGotoLocationCommand {
 public:
@@ -2262,12 +2477,12 @@ public:
     }
 };
 
-class GotoBookmarkGlobalCommand : public GenericPathAndLocationCommadn {
+class GotoBookmarkGlobalCommand : public GenericPathAndLocationCommand {
 public:
     static inline const std::string cname = "goto_bookmark_g";
     static inline const std::string hname = "Open the bookmark list of all documents";
 
-    GotoBookmarkGlobalCommand(MainWidget* w) : GenericPathAndLocationCommadn(cname, w) {};
+    GotoBookmarkGlobalCommand(MainWidget* w) : GenericPathAndLocationCommand(cname, w) {};
 
     void handle_generic_requirement() {
         widget->handle_goto_bookmark_global();
@@ -2319,12 +2534,12 @@ public:
 };
 
 
-class GotoHighlightGlobalCommand : public GenericPathAndLocationCommadn {
+class GotoHighlightGlobalCommand : public GenericPathAndLocationCommand {
 public:
     static inline const std::string cname = "goto_highlight_g";
     static inline const std::string hname = "Open the highlight list of the all documents";
 
-    GotoHighlightGlobalCommand(MainWidget* w) : GenericPathAndLocationCommadn(cname, w) {};
+    GotoHighlightGlobalCommand(MainWidget* w) : GenericPathAndLocationCommand(cname, w) {};
 
     void handle_generic_requirement() {
         widget->handle_goto_highlight_global();
@@ -2412,6 +2627,18 @@ public:
     ToggleWindowConfigurationCommand(MainWidget* w) : Command(cname, w) {};
     void perform() {
         widget->toggle_window_configuration();
+    }
+
+    bool requires_document() { return false; }
+};
+
+class ShowPortalWindowCommand : public Command {
+public:
+    static inline const std::string cname = "show_portal_window";
+    static inline const std::string hname = "Show the portal window (always show in two window configuration, regardless of the current configuration)";
+    ShowPortalWindowCommand(MainWidget* w) : Command(cname, w) {};
+    void perform() {
+        widget->show_portal_window();
     }
 
     bool requires_document() { return false; }
@@ -2809,31 +3036,110 @@ public:
     bool requires_document() { return false; }
 };
 
+class OpenDocumentInDirectoryCommand : public Command {
+public:
+    static inline const std::string cname = "open_document_in_directory";
+    static inline const std::string hname = "Open a document using the native file explorer, rooted in the given directory.";
+    OpenDocumentInDirectoryCommand(MainWidget* w) : Command(cname, w) {};
+
+    std::wstring root_dir;
+    std::wstring file_name;
+
+    bool pushes_state() {
+        return true;
+    }
+
+    std::optional<Requirement> next_requirement(MainWidget* widget) {
+        if (root_dir.size() == 0) {
+            return Requirement{ RequirementType::Text, "Root Directory" };
+        }
+        else if (file_name.size() == 0) {
+            return Requirement{ RequirementType::File, "File" };
+        }
+        else {
+            return {};
+        }
+    }
+
+    std::optional<QString> get_file_path_requirement_root_dir() {
+        return QString::fromStdWString(root_dir);
+    }
+
+
+    void set_file_requirement(std::wstring value) {
+        file_name = value;
+    }
+
+    void set_text_requirement(std::wstring value) {
+        root_dir = value;
+    }
+
+    void perform() {
+        widget->open_document(file_name);
+    }
+
+    bool requires_document() { return false; }
+};
+
 
 class MoveSmoothCommand : public Command {
     bool was_held = false;
+    float velocity_multiplier = 1.0f;
+    std::optional<FixedVelocityState> fixed_velocity_state_to_restore = {};
 public:
-    MoveSmoothCommand(std::string name, MainWidget* w) : Command(name, w) {};
+    MoveSmoothCommand(std::string name, MainWidget* w, float velocity_mult=1.0f) : Command(name, w) {
+        velocity_multiplier = velocity_mult;
+    };
 
-    virtual bool is_down() = 0;
+    virtual bool is_down(){
+        return false;
+    }
+
+    virtual bool is_up(){
+        return false;
+    }
+
+    virtual bool is_left(){
+        return false;
+    }
+
+    virtual bool is_right(){
+        return false;
+    }
 
     void perform() {
         if (widget->main_document_view->is_ruler_mode()) {
             if (is_down()) {
                 widget->move_visual_mark_next();
             }
-            else {
+            if (is_up()) {
                 widget->move_visual_mark_prev();
             }
         }
         else {
-            widget->handle_move_smooth_hold(is_down());
-            widget->set_fixed_velocity(is_down() ? -SMOOTH_MOVE_MAX_VELOCITY : SMOOTH_MOVE_MAX_VELOCITY);
+            if (!fixed_velocity_state_to_restore.has_value()) {
+                fixed_velocity_state_to_restore = widget->get_continuous_fixed_velocity_state();
+            }
+
+            if (is_down() || is_up()){
+                widget->handle_move_smooth_hold(is_down());
+                widget->set_fixed_velocity(is_down() ? -SMOOTH_MOVE_MAX_VELOCITY * velocity_multiplier : SMOOTH_MOVE_MAX_VELOCITY * velocity_multiplier, 0);
+            }
+            else{
+                widget->handle_move_smooth_hold(is_down());
+                widget->set_fixed_velocity(0, is_left() ? -SMOOTH_MOVE_MAX_VELOCITY * velocity_multiplier : SMOOTH_MOVE_MAX_VELOCITY * velocity_multiplier);
+            }
         }
     }
 
     void perform_up() {
-        widget->set_fixed_velocity(0);
+        if (fixed_velocity_state_to_restore.has_value()) {
+            widget->restore_fixed_velocity_state(fixed_velocity_state_to_restore.value());
+            fixed_velocity_state_to_restore = {};
+        }
+        else {
+            widget->set_fixed_velocity(0, 0);
+        }
     }
 
     bool is_holdable() {
@@ -2852,7 +3158,12 @@ public:
 
     void on_key_hold() {
         was_held = true;
-        widget->handle_move_smooth_hold(is_down());
+        if (is_down() || is_up()){
+            widget->handle_move_smooth_hold(is_down());
+        }
+        else{
+            widget->handle_move_smooth_horizontal_hold(is_left());
+        }
         widget->validate_render();
     }
 };
@@ -2863,8 +3174,8 @@ public:
     static inline const std::string hname = "";
     MoveUpSmoothCommand(MainWidget* w) : MoveSmoothCommand(cname, w) {};
 
-    bool is_down() {
-        return false;
+    bool is_up() override {
+        return true;
     }
 };
 
@@ -2873,6 +3184,79 @@ public:
     static inline const std::string cname = "move_down_smooth";
     static inline const std::string hname = "";
     MoveDownSmoothCommand(MainWidget* w) : MoveSmoothCommand(cname, w) {};
+
+    bool is_down() {
+        return true;
+    }
+};
+
+class MoveLeftSmooth : public MoveSmoothCommand {
+public:
+    static inline const std::string cname = "move_left_smooth";
+    static inline const std::string hname = "";
+    MoveLeftSmooth(MainWidget* w) : MoveSmoothCommand(cname, w) {};
+
+    bool is_left() {
+        return true;
+    }
+};
+
+class MoveRightSmooth : public MoveSmoothCommand {
+public:
+    static inline const std::string cname = "move_right_smooth";
+    static inline const std::string hname = "";
+    MoveRightSmooth(MainWidget* w) : MoveSmoothCommand(cname, w) {};
+
+    bool is_right() {
+        return true;
+    }
+};
+
+class  SetFixedVelocityCommand : public TextCommand {
+public:
+    static inline const std::string cname = "set_fixed_velocity";
+    static inline const std::string hname = "Set fixed velocity for smooth scrolling";
+    SetFixedVelocityCommand(MainWidget* w) : TextCommand(cname, w) {}
+
+    void perform() {
+        QString text_value = QString::fromStdWString(text.value());
+        QStringList parts = text_value.split(" ");
+
+        if (parts.size() == 1){
+            // just set the velocity
+            widget->set_fixed_velocity(parts[0].toFloat(), 0);
+            widget->validation_interval_timer->setInterval(0);
+        }
+        else if (parts.size() == 2){
+            // set the velocity and maximum move amount
+
+            float vel = parts[0].toFloat();
+            float move_amount = parts[1].toFloat();
+
+            widget->set_fixed_velocity(parts[0].toFloat(), 0, parts[1].toFloat());
+            widget->validation_interval_timer->setInterval(0);
+        }
+
+    }
+};
+
+
+class ScreenUpSmoothCommand : public MoveSmoothCommand {
+public:
+    static inline const std::string cname = "screen_up_smooth";
+    static inline const std::string hname = "Move screen up smoothly";
+    ScreenUpSmoothCommand(MainWidget* w) : MoveSmoothCommand(cname, w, 3.0f) {};
+
+    bool is_up() {
+        return true;
+    }
+};
+
+class ScreenDownSmoothCommand : public MoveSmoothCommand {
+public:
+    static inline const std::string cname = "screen_down_smooth";
+    static inline const std::string hname = "Move screen down smoothly";
+    ScreenDownSmoothCommand(MainWidget* w) : MoveSmoothCommand(cname, w, 3.0f) {};
 
     bool is_down() {
         return true;
@@ -3190,6 +3574,16 @@ public:
 
 };
 
+class RepeatLastCommandCommnad : public Command {
+public:
+    static inline const std::string cname = "repeat_last_command";
+    static inline const std::string hname = "Repeat the last command executed.";
+    RepeatLastCommandCommnad(MainWidget* w) : Command(cname, w) {};
+    void perform() {
+        widget->repeat_last_command();
+    }
+};
+
 class OverviewDefinitionCommand : public Command {
 public:
     static inline const std::string cname = "overview_definition";
@@ -3341,6 +3735,7 @@ public:
             widget->doc()->get_bookmarks()[index].description = initial_text;
             widget->doc()->get_bookmarks()[index].font_size = initial_font_size;
         }
+        TextCommand::on_cancel();
     }
 
     std::optional<Requirement> next_requirement(MainWidget* widget) {
@@ -3520,59 +3915,126 @@ public:
 
 };
 
-class GenericVisibleBookmarkCommand : public GenericVisibleSelectCommand {
+class GenericVisibleAnnotationCommand : public GenericVisibleSelectCommand {
+
+    std::vector<SioyekVisibleObjectIndex> visible_objects;
 
 public:
-    GenericVisibleBookmarkCommand(std::string name, MainWidget* w) : GenericVisibleSelectCommand(name, w) {};
+    GenericVisibleAnnotationCommand(std::string name, MainWidget* w) : GenericVisibleSelectCommand(name, w) {};
 
     int get_selected_item_index() override{
-        return widget->selected_bookmark_index;
+        if (widget->selected_bookmark_index != -1) {
+            return widget->selected_bookmark_index;
+        }
+        return widget->selected_highlight_index;
     }
 
     std::vector<int> get_visible_item_indices() override {
-        return widget->main_document_view->get_visible_bookmark_indices();
+        visible_objects.clear();
+
+        std::vector<int> visible_object_indices;
+        std::vector<int> visible_bookmark_indices = widget->main_document_view->get_visible_bookmark_indices();
+        std::vector<int> visible_highlight_indices = widget->main_document_view->get_visible_highlight_indices();
+
+        for (const auto& index : visible_bookmark_indices) {
+            visible_objects.push_back({ SioyekVisibleObjectType::Bookmark, index });
+            visible_object_indices.push_back(visible_object_indices.size());
+        }
+        for (const auto& index : visible_highlight_indices) {
+            visible_objects.push_back({ SioyekVisibleObjectType::Highlight, index });
+            visible_object_indices.push_back(visible_object_indices.size());
+        }
+
+        return visible_object_indices;
     }
 
 
     void handle_indices_pre_perform() override {
-        widget->handle_visible_bookmark_tags_pre_perform(visible_item_indices);
+        widget->handle_visible_objects_tags_pre_perform(visible_objects);
     }
 
-    virtual void perform_with_bookmark_selected() = 0;
+    virtual void perform_with_visible_object_selected() = 0;
 
     void perform_with_selected_index(std::optional<int> index) override {
         if (index) {
-            if (index < visible_item_indices.size()) {
-                widget->set_selected_bookmark_index(visible_item_indices[index.value()]);
+            if (index < visible_objects.size()) {
+                if (visible_objects[index.value()].type == SioyekVisibleObjectType::Highlight) {
+                    widget->set_selected_highlight_index(visible_objects[index.value()].index);
+                    widget->set_selected_bookmark_index(-1);
+                }
+                else if (visible_objects[index.value()].type == SioyekVisibleObjectType::Bookmark) {
+                    widget->set_selected_bookmark_index(visible_objects[index.value()].index);
+                    widget->set_selected_highlight_index(-1);
+                }
             }
         }
 
-        perform_with_bookmark_selected();
+        perform_with_visible_object_selected();
     }
 
 };
 
-class DeleteVisibleBookmarkCommand : public GenericVisibleBookmarkCommand {
+class DeleteVisibleAnnotationCommand : public GenericVisibleAnnotationCommand {
 
 public:
-    static inline const std::string cname = "delete_visible_bookmark";
-    static inline const std::string hname = "Delete the selected bookmark";
-    DeleteVisibleBookmarkCommand(MainWidget* w) : GenericVisibleBookmarkCommand(cname, w) {};
+    static inline const std::string cname = "delete_visible_annotation";
+    static inline const std::string hname = "Delete the selected annotation";
+    DeleteVisibleAnnotationCommand(MainWidget* w) : GenericVisibleAnnotationCommand(cname, w) {};
 
-    void perform_with_bookmark_selected() override {
-        widget->handle_delete_selected_bookmark();
+    void perform_with_visible_object_selected() override {
+        if (widget->selected_bookmark_index != -1) {
+            widget->handle_delete_selected_bookmark();
+        }
+        else if (widget->selected_highlight_index != -1) {
+            widget->handle_delete_selected_highlight();
+        }
     }
 };
 
-class EditVisibleBookmarkCommand : public GenericVisibleBookmarkCommand {
+class DeleteSelectedAnnotationCommand : public Command {
 
 public:
-    static inline const std::string cname = "edit_visible_bookmark";
+    static inline const std::string cname = "delete_selected_annotation";
+    static inline const std::string hname = "Delete the selected annotation";
+    DeleteSelectedAnnotationCommand(MainWidget* w) : Command(cname, w) {};
+
+    void perform() override {
+        widget->handle_delete_selected_annotation();
+        widget->invalidate_render();
+    }
+};
+
+class EditSelectedAnnotationCommand : public Command {
+
+public:
+    static inline const std::string cname = "edit_selected_annotation";
+    static inline const std::string hname = "Edit the selected annotation";
+    EditSelectedAnnotationCommand(MainWidget* w) : Command(cname, w) {};
+
+    void perform() override {
+        if (widget->selected_highlight_index != -1) {
+            widget->run_command_with_name("edit_selected_highlight");
+        }
+        else if (widget->selected_bookmark_index != -1) {
+            widget->run_command_with_name("edit_selected_bookmark");
+        }
+    }
+};
+
+class EditVisibleAnnotationCommand : public GenericVisibleAnnotationCommand {
+
+public:
+    static inline const std::string cname = "edit_visible_annotation";
     static inline const std::string hname = "";
-    EditVisibleBookmarkCommand(MainWidget* w) : GenericVisibleBookmarkCommand(cname, w) {};
+    EditVisibleAnnotationCommand(MainWidget* w) : GenericVisibleAnnotationCommand(cname, w) {};
 
-    void perform_with_bookmark_selected() override {
-        widget->execute_macro_if_enabled(L"edit_selected_bookmark");
+    void perform_with_visible_object_selected() override {
+        if (widget->selected_bookmark_index != -1){
+            widget->execute_macro_if_enabled(L"edit_selected_bookmark");
+        }
+        else if (widget->selected_highlight_index != -1){
+            widget->execute_macro_if_enabled(L"edit_selected_highlight");
+        }
     }
 };
 
@@ -3596,7 +4058,7 @@ public:
     static inline const std::string hname = "";
     ChangeHighlightTypeCommand(MainWidget* w) : GenericHighlightCommand(cname, w) {};
 
-    void perform_with_highlight_selected() {
+    void perform_with_highlight_selected() override {
         widget->execute_macro_if_enabled(L"add_highlight");
     }
 
@@ -3609,7 +4071,7 @@ public:
     static inline const std::string hname = "";
     AddAnnotationToHighlightCommand(MainWidget* w) : GenericHighlightCommand(cname, w) {};
 
-    void perform_with_highlight_selected() {
+    void perform_with_highlight_selected() override {
         widget->execute_macro_if_enabled(L"add_annot_to_selected_highlight");
     }
 
@@ -3650,11 +4112,11 @@ public:
     }
 };
 
-class OpenPrevDocCommand : public GenericPathAndLocationCommadn {
+class OpenPrevDocCommand : public GenericPathAndLocationCommand {
 public:
     static inline const std::string cname = "open_prev_doc";
     static inline const std::string hname = "Open the list of previously opened documents";
-    OpenPrevDocCommand(MainWidget* w) : GenericPathAndLocationCommadn(cname, w, true) {};
+    OpenPrevDocCommand(MainWidget* w) : GenericPathAndLocationCommand(cname, w, true) {};
 
     void handle_generic_requirement() {
         widget->handle_open_prev_doc();
@@ -3663,11 +4125,11 @@ public:
     bool requires_document() { return false; }
 };
 
-class OpenAllDocsCommand : public GenericPathAndLocationCommadn {
+class OpenAllDocsCommand : public GenericPathAndLocationCommand {
 public:
     static inline const std::string cname = "open_all_docs";
     static inline const std::string hname = "";
-    OpenAllDocsCommand(MainWidget* w) : GenericPathAndLocationCommadn(cname, w, true) {};
+    OpenAllDocsCommand(MainWidget* w) : GenericPathAndLocationCommand(cname, w, true) {};
 
     void handle_generic_requirement() {
         widget->handle_open_all_docs();
@@ -3685,12 +4147,13 @@ public:
 
     void handle_generic_requirement() {
 
+        QString root_path = QString::fromStdWString(DEFAULT_OPEN_FILE_PATH);
         widget->set_current_widget(new FileSelector(
             FUZZY_SEARCHING,
             [widget = widget, this](std::wstring doc_path) {
                 set_generic_requirement(QString::fromStdWString(doc_path));
                 widget->advance_command(std::move(widget->pending_command_instance));
-            }, widget, ""));
+            }, widget, root_path));
         widget->show_current_widget();
     }
 
@@ -3749,6 +4212,82 @@ public:
 
 };
 
+#ifdef Q_OS_MACOS
+class MacosLookupCommand : public Command {
+public:
+    static inline const std::string cname = "macos_lookup";
+    static inline const std::string hname = "Look up selected text (macOS)";
+
+    MacosLookupCommand(MainWidget* w) : Command(cname, w) {};
+
+    void perform() {
+        std::wstring selected_text = widget->get_selected_text();
+
+        if (selected_text.empty()){
+            widget->select_word_under_cursor();
+            selected_text = widget->get_selected_text();
+        }
+
+        if (!selected_text.empty()) {
+            std::string utf8_text = utf8_encode(selected_text);
+
+            double x = widget->width() / 2.0;
+            double y = widget->height() / 2.0;
+
+            std::vector<AbsoluteRect> char_rects;
+            std::deque<AbsoluteRect> individual_char_rects = *widget->main_document_view->get_selected_character_rects();
+            merge_selected_character_rects(individual_char_rects, char_rects);
+
+            if (!char_rects.empty()) {
+                AbsoluteDocumentPos center_pos = char_rects.front().center();
+                WindowPos window_pos = center_pos.to_window(widget->main_document_view);
+                x = window_pos.x;
+                y = window_pos.y;
+            }
+
+            showLookupForString(widget->winId(), utf8_text.c_str(), x, y);
+        }
+    }
+};
+#endif
+
+class CopyAllTextCommand : public Command {
+public:
+    static inline const std::string cname = "copy_all_text";
+    static inline const std::string hname = "Copy all of the file's text";
+    CopyAllTextCommand(MainWidget* w) : Command(cname, w) {};
+    void perform() {
+        std::wstring& doc_text = widget->doc()->get_super_fast_search_index();
+        copy_to_clipboard(doc_text);
+    }
+
+};
+
+class CopyCurrentChapterTextCommand : public Command {
+public:
+    static inline const std::string cname = "copy_current_chapter_text";
+    static inline const std::string hname = "Copy current chapter's text";
+    CopyCurrentChapterTextCommand(MainWidget* w) : Command(cname, w) {};
+    void perform() {
+        auto chapter_page_range = widget->main_document_view->get_current_page_range();
+        if (chapter_page_range) {
+            auto [begin_page, end_page] = chapter_page_range.value();
+            auto page_indices = widget->doc()->get_super_fast_search_page_indices();
+            std::wstring& doc_text = widget->doc()->get_super_fast_search_index();
+            if (begin_page >= 0 && begin_page < page_indices.size() && end_page >= 0 && end_page < page_indices.size()) {
+                int begin_index = page_indices[begin_page];
+                int end_index = end_page < page_indices.size() - 1 ? page_indices[end_page + 1] : doc_text.size();
+
+                copy_to_clipboard(doc_text.substr(begin_index, end_index - begin_index));
+
+            }
+
+        }
+
+    }
+
+};
+
 class GotoBeginningCommand : public Command {
 public:
     static inline const std::string cname = "goto_beginning";
@@ -3782,7 +4321,12 @@ public:
     GotoEndCommand(MainWidget* w) : Command(cname, w) {};
 public:
     void perform() {
-        widget->main_document_view->goto_end();
+        if (num_repeats == 0) {
+            widget->main_document_view->goto_end();
+        }
+        else {
+            widget->main_document_view->goto_page(num_repeats - 1);
+        }
     }
 
     bool pushes_state() {
@@ -3823,6 +4367,7 @@ public:
 
     void on_cancel() override {
         widget->set_should_highlight_words(false);
+        Command::on_cancel();
     }
 
     void pre_perform() override {
@@ -4329,7 +4874,12 @@ public:
 
     void perform() {
         widget->handle_close_event();
-        QApplication::quit();
+        if (QGuiApplication::instance() && QGuiApplication::applicationState() == Qt::ApplicationState::ApplicationActive) {
+            QGuiApplication::quit();
+        }
+        else{
+            exit(0);
+        }
     }
 
 
@@ -4447,6 +4997,7 @@ KeyboardSelectPointCommand::KeyboardSelectPointCommand(MainWidget* w, std::uniqu
 void KeyboardSelectPointCommand::on_cancel() {
     origin->on_cancel();
     widget->set_highlighted_tags({});
+    Command::on_cancel();
 
 }
 
@@ -4524,7 +5075,7 @@ void KeyboardSelectPointCommand::pre_perform() {
 std::string KeyboardSelectPointCommand::get_name() {
     return "keyboard_point_select";
 }
- 
+
 
 void KeyboardSelectPointCommand::set_symbol_requirement(char value) {
     if (text.has_value()) {
@@ -4622,6 +5173,7 @@ public:
 
     void on_cancel() override {
         widget->set_highlighted_tags({});
+        Command::on_cancel();
 
     }
 
@@ -5122,11 +5674,11 @@ public:
 };
 
 
-class EnterPasswordCommand : public TextCommand {
+class EnterPasswordCommand : public PasswordCommand {
 public:
     static inline const std::string cname = "enter_password";
     static inline const std::string hname = "Enter password";
-    EnterPasswordCommand(MainWidget* w) : TextCommand(cname, w) {};
+    EnterPasswordCommand(MainWidget* w) : PasswordCommand(cname, w) {};
     void perform() {
         std::string password = utf8_encode(text.value());
         widget->add_password(widget->main_document_view->get_document()->get_path(), password);
@@ -5327,6 +5879,7 @@ public:
     GotoSelectedTextCommand(MainWidget* w) : Command(cname, w) {};
 
     void perform() {
+        widget->update_text_selection_with_begin_and_end(widget->selection_begin, widget->selection_end);
         widget->long_jump_to_destination(widget->selection_begin.y);
     }
 
@@ -5339,11 +5892,30 @@ public:
     SetWindowRectCommand(MainWidget* w) : TextCommand(cname, w) {};
 
     void perform() {
+        if (!text.has_value()) return;
+
         QStringList parts = QString::fromStdWString(text.value()).split(' ');
-        int x0 = parts[0].toInt();
-        int y0 = parts[1].toInt();
-        int w = parts[2].toInt();
-        int h = parts[3].toInt();
+        if (parts.size() < 4) {
+            show_error_message(L"Invalid format. Expected: x y width height");
+            return;
+        }
+
+        bool ok1, ok2, ok3, ok4;
+        int x0 = parts[0].toInt(&ok1);
+        int y0 = parts[1].toInt(&ok2);
+        int w = parts[2].toInt(&ok3);
+        int h = parts[3].toInt(&ok4);
+
+        if (!ok1 || !ok2 || !ok3 || !ok4) {
+            show_error_message(L"Invalid numbers in input");
+            return;
+        }
+
+        if (w <= 0 || h <= 0) {
+            show_error_message(L"Width and height must be positive");
+            return;
+        }
+
         widget->resize(w, h);
         widget->move(x0, y0);
     }
@@ -5485,12 +6057,51 @@ class DebugCommand : public Command {
 public:
     inline static const std::string cname = "debug";
     inline static const std::string hname = "[internal]";
-    static inline const bool developer_only = true;
+    static inline const bool developer_only = false;
 
     DebugCommand(MainWidget* w) : Command(cname, w) {};
 
     void perform() {
         widget->handle_debug_command();
+    }
+
+};
+
+class SelectNextCharCommand : public Command {
+public:
+    inline static const std::string cname = "select_next_char";
+    inline static const std::string hname = "Select the next character after the current selection.";
+
+    SelectNextCharCommand(MainWidget* w) : Command(cname, w) {};
+
+    void perform() {
+        widget->select_next_char();
+    }
+
+};
+
+class UnselectLastCharCommand : public Command {
+public:
+    inline static const std::string cname = "unselect_last_char";
+    inline static const std::string hname = "Unselect the last character in the current selection.";
+
+    UnselectLastCharCommand(MainWidget* w) : Command(cname, w) {};
+
+    void perform() {
+        widget->unselect_last_char();
+    }
+
+};
+
+class CollapseMenuCommand : public Command {
+public:
+    inline static const std::string cname = "toggle_menu_collapse";
+    inline static const std::string hname = "Toggle collapse of tree menus.";
+
+    CollapseMenuCommand(MainWidget* w) : Command(cname, w) {};
+
+    void perform() {
+        widget->toggle_menu_collapse();
     }
 
 };
@@ -5571,11 +6182,34 @@ public:
 class SelectRectCommand : public Command {
 public:
     static inline const std::string cname = "select_rect";
-    static inline const std::string hname = "Select a rectangle to be used in other commands";
-    SelectRectCommand(MainWidget* w) : Command(cname, w) {};
+    static inline const std::string hname = "Select a rectangle.";
+    SelectRectCommand (MainWidget* w) : Command(cname, w) {};
+    std::optional<AbsoluteRect> absrect = {};
+
+    std::optional<Requirement> next_requirement(MainWidget* widget) {
+
+        if (!absrect.has_value()) {
+            Requirement req = { RequirementType::Rect, "Command Rect" };
+            return req;
+        }
+        return {};
+    }
+
+    void set_rect_requirement(AbsoluteRect rect) {
+        absrect = rect;
+    }
 
     void perform() {
-        widget->set_rect_select_mode(true);
+        QJsonDocument doc;
+        QJsonObject rect_json;
+        rect_json["x0"] = absrect->x0;
+        rect_json["y0"] = absrect->y0;
+        rect_json["x1"] = absrect->x1;
+        rect_json["y1"] = absrect->y1;
+        doc.setObject(rect_json);
+        result = utf8_decode(doc.toJson().toStdString());
+        widget->clear_selected_rect();
+        widget->set_rect_select_mode(false);
     }
 
 };
@@ -5803,6 +6437,14 @@ public:
         file_path = value;
     }
 
+    std::optional<QString> get_file_path_requirement_root_dir() {
+        QFileInfo file_info(QString::fromStdWString(widget->doc()->get_path()));
+        QString full_path = file_info.absolutePath();
+        QString file_path = file_info.fileName();
+        QString parent_path = full_path.mid(full_path.size() - file_path.size());
+        return parent_path;
+    }
+
     std::optional<Requirement> next_requirement(MainWidget* widget) {
         if (!file_path.has_value()) {
             Requirement req = { RequirementType::File, "File Path" };
@@ -5815,6 +6457,76 @@ public:
         //std::wstring embedded_pdf_file_name = select_new_pdf_file_name();
         if (file_path->size() > 0) {
             widget->main_document_view->get_document()->embed_annotations(file_path.value());
+        }
+    }
+};
+
+class EmbedGeneratedTocCommand : public Command {
+public:
+    static inline const std::string cname = "embed_generated_toc";
+    static inline const std::string hname = "Embed generated table of contents into a new PDF file";
+    EmbedGeneratedTocCommand(MainWidget* w) : Command(cname, w) {};
+
+    std::optional<std::wstring> file_path = {};
+
+    virtual void set_file_requirement(std::wstring value) {
+        file_path = value;
+    }
+
+    std::optional<QString> get_file_path_requirement_root_dir() {
+        QFileInfo file_info(QString::fromStdWString(widget->doc()->get_path()));
+        QString full_path = file_info.absolutePath();
+        QString file_path = file_info.fileName();
+        QString parent_path = full_path.mid(full_path.size() - file_path.size());
+        return parent_path;
+    }
+
+    std::optional<Requirement> next_requirement(MainWidget* widget) {
+        if (!file_path.has_value()) {
+            Requirement req = { RequirementType::File, "File Path" };
+            return req;
+        }
+        return {};
+    }
+
+    void perform() {
+        if (file_path->size() > 0) {
+            widget->main_document_view->get_document()->embed_generated_toc(file_path.value());
+        }
+    }
+};
+
+class ExportGeneratedTocCommand : public Command {
+public:
+    static inline const std::string cname = "export_generated_toc";
+    static inline const std::string hname = "Export the generated table of contents into a text file.";
+    ExportGeneratedTocCommand(MainWidget* w) : Command(cname, w) {};
+
+    std::optional<std::wstring> file_path = {};
+
+    virtual void set_file_requirement(std::wstring value) {
+        file_path = value;
+    }
+
+    std::optional<QString> get_file_path_requirement_root_dir() {
+        QFileInfo file_info(QString::fromStdWString(widget->doc()->get_path()));
+        QString full_path = file_info.absolutePath();
+        QString file_path = file_info.fileName();
+        QString parent_path = full_path.mid(full_path.size() - file_path.size());
+        return parent_path;
+    }
+
+    std::optional<Requirement> next_requirement(MainWidget* widget) {
+        if (!file_path.has_value()) {
+            Requirement req = { RequirementType::File, "File Path" };
+            return req;
+        }
+        return {};
+    }
+
+    void perform() {
+        if (file_path->size() > 0) {
+            widget->main_document_view->get_document()->export_generated_toc(file_path.value());
         }
     }
 };
@@ -6366,7 +7078,7 @@ public:
 //            if (next_invocation) {
 //                res.push_back(next_invocation.value());
 //            }
-//            
+//
 //        }
 //        return res;
 //    }
@@ -6548,6 +7260,8 @@ CommandManager::CommandManager(ConfigManager* config_manager) {
     register_command<OverviewDefinitionCommand>();
     register_command<PortalToDefinitionCommand>();
     register_command<GotoLoadedDocumentCommand>();
+    register_command<GotoNextTabCommand>();
+    register_command<GotoPrevTabCommand>();
     register_command<NextItemCommand>();
     register_command<PrevItemCommand>();
     register_command<ToggleTextMarkCommand>();
@@ -6576,6 +7290,7 @@ CommandManager::CommandManager(ConfigManager* config_manager) {
     register_command<ShowOptionsCommand>();
     register_command<ShowTextPromptCommand>();
     register_command<GetStateJsonCommand>();
+    register_command<SetStateJsonCommand>();
     register_command<GetPaperNameCommand>();
     register_command<GetOverviewPaperName>();
     register_command<GetAnnotationsJsonCommand>();
@@ -6596,6 +7311,10 @@ CommandManager::CommandManager(ConfigManager* config_manager) {
     register_command<MoveRightCommand>();
     register_command<MoveDownSmoothCommand>();
     register_command<MoveUpSmoothCommand>();
+    register_command<MoveLeftSmooth>();
+    register_command<MoveRightSmooth>();
+    register_command<ScreenUpSmoothCommand>();
+    register_command<ScreenDownSmoothCommand>();
     register_command<MoveLeftInOverviewCommand>();
     register_command<MoveRightInOverviewCommand>();
     register_command<SaveScratchpadCommand>();
@@ -6615,6 +7334,7 @@ CommandManager::CommandManager(ConfigManager* config_manager) {
     register_command<NextPageSmartCommand>();
     register_command<PreviousPageSmartCommand>();
     register_command<OpenDocumentCommand>();
+    register_command<OpenDocumentInDirectoryCommand>();
     register_command<ScreenshotCommand>();
     register_command<FramebufferScreenshotCommand>();
     register_command<WaitCommand>();
@@ -6633,6 +7353,7 @@ CommandManager::CommandManager(ConfigManager* config_manager) {
     register_command<IncreaseFreetextBookmarkFontSizeCommand>();
     register_command<DecreaseFreetextBookmarkFontSizeCommand>();
     register_command<GotoPortalListCommand>();
+    register_command<ShowMarks>();
     register_command<GotoBookmarkCommand>();
     register_command<GotoBookmarkGlobalCommand>();
     register_command<GotoHighlightGlobalCommand>();
@@ -6649,8 +7370,10 @@ CommandManager::CommandManager(ConfigManager* config_manager) {
     register_command<DeleteBookmarkCommand>();
     register_command<DeleteHighlightCommand>();
     register_command<DeleteLastHighlightCommand>();
-    register_command<DeleteVisibleBookmarkCommand>();
-    register_command<EditVisibleBookmarkCommand>();
+    register_command<DeleteVisibleAnnotationCommand>();
+    register_command<DeleteSelectedAnnotationCommand>();
+    register_command<EditSelectedAnnotationCommand>();
+    register_command<EditVisibleAnnotationCommand>();
     register_command<GotoPortalCommand>();
     register_command<GotoPortalCommand>();
     register_command<EditPortalCommand>();
@@ -6660,6 +7383,11 @@ CommandManager::CommandManager(ConfigManager* config_manager) {
     register_command<OpenDocumentEmbeddedCommand>();
     register_command<OpenDocumentEmbeddedFromCurrentPathCommand>();
     register_command<CopyCommand>();
+#ifdef Q_OS_MACOS
+    register_command<MacosLookupCommand>();
+#endif
+    register_command<CopyAllTextCommand>();
+    register_command<CopyCurrentChapterTextCommand>();
     register_command<ToggleFullscreenCommand>();
     register_command<MaximizeCommand>();
     register_command<ToggleOneWindowCommand>();
@@ -6714,6 +7442,7 @@ CommandManager::CommandManager(ConfigManager* config_manager) {
     register_command<SetFreehandType>();
     register_command<SetFreehandAlphaCommand>();
     register_command<ToggleWindowConfigurationCommand>();
+    register_command<ShowPortalWindowCommand>();
     register_command<PrefsUserAllCommand>();
     register_command<KeysUserAllCommand>();
     register_command<FitToPageWidthRatioCommand>();
@@ -6760,6 +7489,7 @@ CommandManager::CommandManager(ConfigManager* config_manager) {
     register_command<DownloadOverviewPaperCommand>();
     register_command<GotoWindowCommand>();
     register_command<ToggleSmoothScrollModeCommand>();
+    register_command<SetFixedVelocityCommand>();
     register_command<GotoBeginningCommand>();
     register_command<ToggleScrollbarCommand>();
     register_command<OverviewToPortalCommand>();
@@ -6783,6 +7513,8 @@ CommandManager::CommandManager(ConfigManager* config_manager) {
     register_command<ToggleHorizontalLockCommand>();
     register_command<ExecuteCommand>();
     register_command<EmbedAnnotationsCommand>();
+    register_command<EmbedGeneratedTocCommand>();
+    register_command<ExportGeneratedTocCommand>();
     register_command<ImportAnnotationsCommand>();
     register_command<CopyWindowSizeConfigCommand>();
     register_command<ToggleSelectHighlightCommand>();
@@ -6807,6 +7539,9 @@ CommandManager::CommandManager(ConfigManager* config_manager) {
     register_command<ShowTouchSettingsMenu>();
     register_command<ShowTouchDrawingMenu>();
     register_command<DebugCommand>();
+    register_command<SelectNextCharCommand>();
+    register_command<UnselectLastCharCommand>();
+    register_command<CollapseMenuCommand>();
     register_command<ExportPythonApiCommand>();
     register_command<ExportDefaultConfigFile>();
     register_command<ExportCommandNamesCommand>();
@@ -6817,7 +7552,9 @@ CommandManager::CommandManager(ConfigManager* config_manager) {
     register_command<PrintNonDefaultConfigs>();
     register_command<SetWindowRectCommand>();
     register_command<MoveSelectedBookmarkCommand>();
+    register_command<RepeatLastCommandCommnad>();
     register_command<CloseWindowCommand>("q");
+
 
     for (auto [command_name_, command_value] : ADDITIONAL_COMMANDS) {
         std::string command_name = utf8_encode(command_name_);
@@ -7131,6 +7868,16 @@ InputParseTreeNode* parse_lines(
 
         for (size_t i = 0; i < tokens.size(); i++) {
             InputParseTreeNode node = parse_token(tokens[i]);
+            if ((node.control_modifier || node.command_modifier || node.alt_modifier) && node.shift_modifier) {
+                std::vector<int> special_texts = { '\b', '\u007F', '\t', ' ', '\r', '\n' };
+                bool is_special = (std::find(special_texts.begin(), special_texts.end(), node.command) != special_texts.end()) || (node.command >= 128);
+                if (!is_special) {
+                    LOG(
+                        std::wcerr << L"Warning: keybind: `" << line << "` defined in " << command_file_names[j] << L":" << command_line_numbers[j] << L" for " << command_strings[j] << L" is no longer valid. We now use something like this:\ncommand <C-O>\nInstead of:\ncommand <C-S-O>\n"
+                    );
+                }
+            }
+
             bool existing_node = false;
             for (InputParseTreeNode* child : parent_node->children) {
                 if (child->is_same(&node)) {
@@ -7296,7 +8043,7 @@ void get_keys_file_lines(const Path& file_path,
         if (last_space_index >= 0){
             std::wstring command_name = line_string.left(last_space_index).trimmed().toStdWString();
             std::wstring command_key = line_string.right(line_string.size() - last_space_index - 1).trimmed().toStdWString();
-            
+
             command_strings.push_back(command_name);
             command_keys.push_back(command_key);
             command_files.push_back(default_path_name);
@@ -7378,8 +8125,6 @@ int InputHandler::get_event_key(QKeyEvent* key_event, bool* shift_pressed, bool*
         if (((key_event->key() >= 'A') && (key_event->key() <= 'Z')) || ((key_event->text().size() > 0) &&
             (std::find(special_texts.begin(), special_texts.end(), key_event->text()) == special_texts.end()))) {
             if (!(*control_pressed) && !(*alt_pressed) && !(*command_pressed)) {
-                // shift is already handled in the returned text
-                *shift_pressed = false;
                 std::wstring text = key_event->text().toStdWString();
                 key = key_event->text().toStdWString()[0];
             }
@@ -7393,6 +8138,8 @@ int InputHandler::get_event_key(QKeyEvent* key_event, bool* shift_pressed, bool*
                     }
                 }
             }
+            // shift is already handled in the returned text
+            *shift_pressed = false;
         }
         else {
             key = key_event->key();
@@ -7509,6 +8256,44 @@ std::unordered_map<std::string, std::vector<std::string>> InputHandler::get_comm
     std::vector<InputParseTreeNode*> prefix;
     add_command_key_mappings(root, res, prefix);
     return res;
+}
+
+void InputHandler::get_commands_with_current_prefix_helper(InputParseTreeNode* node, std::vector<InputParseTreeNode*> prefix, std::unordered_map<std::string, std::vector<std::string>>& map) const {
+    for (size_t i = 0; i < node->children.size(); i++) {
+        prefix.push_back(node->children[i]);
+        if (node->children[i]->is_final){
+            std::string full_name;
+            int index = 0;
+            for (const auto& name : node->children[i]->name_){
+                full_name += name;
+                if (index < node->children[i]->name_.size() - 1){
+                    full_name += ";";
+                }
+                index++;
+            }
+            map[full_name].push_back(get_key_string_from_tree_node_sequence(prefix));
+        }
+        else {
+            get_commands_with_current_prefix_helper(node->children[i], prefix, map);
+        }
+        prefix.pop_back();
+    }
+
+}
+
+std::unordered_map<std::string, std::vector<std::string>> InputHandler::get_commands_with_current_prefix() const {
+
+    std::unordered_map<std::string, std::vector<std::string>> res;
+    std::vector<InputParseTreeNode*> prefix;
+    get_commands_with_current_prefix_helper(current_node, prefix, res);
+    return res;
+}
+
+bool InputHandler::is_on_final_or_root_node() const {
+    if (current_node == nullptr) {
+        return false;
+    }
+    return current_node->is_final || current_node->is_root;
 }
 
 void InputHandler::add_command_key_mappings(InputParseTreeNode* thisroot,
@@ -7639,12 +8424,18 @@ void Command::set_num_repeats(int nr) {
     num_repeats = nr;
 }
 
+int Command::get_num_repeats() {
+    return num_repeats;
+}
+
 void Command::pre_perform() {
 
 }
 
 void Command::on_cancel() {
-
+    if (is_done){
+        *is_done = true;
+    }
 }
 
 void Command::run() {
@@ -7665,6 +8456,10 @@ std::vector<char> Command::special_symbols() {
 
 
 std::string Command::get_name() {
+    return command_cname;
+}
+
+std::string Command::get_pending_name() {
     return command_cname;
 }
 

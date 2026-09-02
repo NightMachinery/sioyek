@@ -11,7 +11,7 @@ INCLUDEPATH += ./pdf_viewer \
           
 INCLUDEPATH += $$(INCLUDE_PATH)
 
-QT += core opengl gui widgets network 3dinput quickwidgets svg texttospeech
+QT += core opengl gui widgets network quickwidgets svg texttospeech
 
 greaterThan(QT_MAJOR_VERSION, 5){
 	QT += openglwidgets
@@ -22,7 +22,7 @@ else{
 }
 
 
-CONFIG += c++17
+CONFIG += c++20
 DEFINES += QT_3DINPUT_LIB QT_OPENGL_LIB QT_OPENGLEXTENSIONS_LIB QT_WIDGETS_LIB
 
 RESOURCES += resources.qrc
@@ -173,7 +173,7 @@ win32{
 
 unix:!mac:!android {
 
-    QMAKE_CXXFLAGS += -std=c++17
+    QMAKE_CXXFLAGS += -std=c++20
 
     CONFIG(linux_app_image){
         LIBS += -ldl -Lmupdf/build/release -lmupdf -lmupdf-third -lmupdf-threads -lharfbuzz -lz
@@ -211,7 +211,7 @@ unix:!mac:!android {
 }
 
 mac {
-    QMAKE_CXXFLAGS += -std=c++17
+    QMAKE_CXXFLAGS += -std=c++20
     LIBS += -ldl -L$$PWD/mupdf/build/release -lmupdf -lmupdf-third -lmupdf-threads -lz
     LIBS += -L$$(LIBRARY_PATH)
 

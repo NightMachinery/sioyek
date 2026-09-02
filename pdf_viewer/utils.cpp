@@ -82,6 +82,7 @@ extern std::wstring PAPER_SEARCH_TILE_PATH;
 extern std::wstring PAPER_SEARCH_CONTRIB_PATH;
 extern std::wstring UI_FONT_FACE_NAME;
 extern std::wstring STATUS_FONT_FACE_NAME;
+extern bool OPEN_LAST_FILE_ON_STARTUP;
 
 extern bool VERBOSE;
 
@@ -174,25 +175,34 @@ TocNode* get_toc_node_from_indices(const std::vector<TocNode*>& roots, const std
 }
 
 
-QStandardItem* get_item_tree_from_toc_helper(const std::vector<TocNode*>& children, QStandardItem* parent) {
+QStandardItem* get_item_tree_from_toc_helper(const std::vector<TocNode*>& children, QStandardItem* parent, const std::vector<std::wstring>& page_labels) {
 
     for (const auto* child : children) {
         QStandardItem* child_item = new QStandardItem(QString::fromStdWString(child->title));
-        QStandardItem* page_item = new QStandardItem("[ " + QString::number(child->page) + " ]");
+
+        QString page_string;
+        if (child->page < page_labels.size() && page_labels[child->page].size() > 0) {
+            page_string = QString::fromStdWString(page_labels[child->page]);
+        }
+        else {
+            page_string = QString::number(child->page);
+        }
+
+        QStandardItem* page_item = new QStandardItem("[ " + page_string + " ]");
         child_item->setData(child->page);
         page_item->setTextAlignment(Qt::AlignVCenter | Qt::AlignRight);
 
-        get_item_tree_from_toc_helper(child->children, child_item);
+        get_item_tree_from_toc_helper(child->children, child_item, page_labels);
         parent->appendRow(QList<QStandardItem*>() << child_item << page_item);
     }
     return parent;
 }
 
 
-QStandardItemModel* get_model_from_toc(const std::vector<TocNode*>& roots) {
+QStandardItemModel* get_model_from_toc(const std::vector<TocNode*>& roots, const std::vector<std::wstring>& page_labels) {
 
     QStandardItemModel* model = new QStandardItemModel();
-    get_item_tree_from_toc_helper(roots, model->invisibleRootItem());
+    get_item_tree_from_toc_helper(roots, model->invisibleRootItem(), page_labels);
     return model;
 }
 
@@ -352,9 +362,7 @@ void show_error_message(const std::wstring& error_message) {
 }
 
 std::wstring utf8_decode(const std::string& encoded_str) {
-    std::wstring res;
-    utf8::utf8to32(encoded_str.begin(), encoded_str.end(), std::back_inserter(res));
-    return res;
+    return QString::fromUtf8(encoded_str).toStdWString();
 }
 
 std::string utf8_encode(const std::wstring& decoded_str) {
@@ -524,12 +532,12 @@ std::vector<fz_stext_char*> reorder_stext_line(fz_stext_line* line) {
     }
 
     if (rtl) {
-        std::sort(reordered_chars.begin(), reordered_chars.end(), [](fz_stext_char* lhs, fz_stext_char* rhs) {
-            return lhs->quad.lr.x > rhs->quad.lr.x;
+        std::stable_sort(reordered_chars.begin(), reordered_chars.end(), [](fz_stext_char* lhs, fz_stext_char* rhs) {
+            return lhs->quad.lr.x >= rhs->quad.lr.x;
             });
     }
     else {
-        std::sort(reordered_chars.begin(), reordered_chars.end(), [](fz_stext_char* lhs, fz_stext_char* rhs) {
+        std::stable_sort(reordered_chars.begin(), reordered_chars.end(), [](fz_stext_char* lhs, fz_stext_char* rhs) {
             return (lhs->quad.lr.x <= rhs->quad.lr.x) && (lhs->quad.ll.x < rhs->quad.ll.x);
             });
     }
@@ -916,6 +924,32 @@ int get_index_from_tag(std::string tag, bool reversed) {
     return res;
 }
 
+fz_stext_line* find_closest_line_to_document_point(fz_stext_page* page, fz_point document_point, int* out_index){
+    float min_distance = 10000000;
+    fz_stext_line* result = nullptr;
+    int index = 0;
+    LL_ITER(block, page->first_block) {
+        if (block->type == FZ_STEXT_BLOCK_TEXT) {
+            LL_ITER(line, block->u.t.first_line) {
+                index++;
+                if (fz_is_point_inside_rect(document_point, line->bbox)) {
+                    *out_index = index;
+                    return line;
+                }
+                float mid_y = (line->first_char->quad.ll.y + line->first_char->quad.ul.y) / 2;
+                float mid_x = (line->first_char->quad.ll.x + line->first_char->quad.lr.x) / 2;
+                float distance = std::abs(mid_y - document_point.y) + std::abs(mid_x - document_point.x);
+                if (distance < min_distance) {
+                    min_distance = distance;
+                    result = line;
+                    *out_index = index;
+                }
+            }
+        }
+    }
+    return result;
+}
+
 fz_stext_char* find_closest_char_to_document_point(const std::vector<fz_stext_char*> flat_chars, fz_point document_point, int* location_index) {
     float min_distance = std::numeric_limits<float>::infinity();
     fz_stext_char* res = nullptr;
@@ -1225,10 +1259,18 @@ void open_web_url(const std::wstring& url_string) {
 
 
 void search_custom_engine(const std::wstring& search_string, const std::wstring& custom_engine_url) {
+    QString search_string_url_encoded = QUrl::toPercentEncoding(QString::fromStdWString(search_string));
+    QString search_url;
+    if (custom_engine_url.find(L"%{search_pattern}") != std::wstring::npos) {
+        search_url = QString::fromStdWString(custom_engine_url);
+        search_url.replace("%{search_pattern}", search_string_url_encoded);
+    }
+    else {
+        search_url = QString::fromStdWString(custom_engine_url) + search_string_url_encoded;
+    }
 
     if (search_string.size() > 0) {
-        QString qurl_string = QString::fromStdWString(custom_engine_url + search_string);
-        open_web_url(qurl_string);
+        open_web_url(search_url);
     }
 }
 
@@ -1406,7 +1448,7 @@ void index_generic(const std::vector<fz_stext_char*>& flat_chars, int page_numbe
         }
     }
 
-    std::wregex index_dst_regex(L"(^|\n)[A-Z][a-zA-Z]{2,}\.?[ \t]+[0-9]+(\.[0-9]+)*");
+    std::wregex index_dst_regex(L"(^|\n)[A-Z][a-zA-Z]{2,}\\.?[ \t]+[0-9]+(\\.[0-9]+)*");
     //std::wregex index_dst_regex(L"(^|\n)[A-Z][a-zA-Z]{2,}[ \t]+[0-9]+(\-[0-9]+)*");
     //std::wregex index_src_regex(L"[a-zA-Z]{3,}[ \t]+[0-9]+(\.[0-9]+)*");
     std::wsmatch match;
@@ -1888,9 +1930,9 @@ QCommandLineParser* get_command_line_parser() {
     //reuse_instance_option.setDescription("When opening a new file, reuse the previous instance of sioyek instead of opening a new window.");
     //parser->addOption(reuse_instance_option);
 
-    //QCommandLineOption new_instance_option("new-instance");
-    //new_instance_option.setDescription("When opening a new file, create a new instance of sioyek.");
-    //parser->addOption(new_instance_option);
+    QCommandLineOption new_instance_option("new-instance");
+    new_instance_option.setDescription("When opening a new file, create a new instance of sioyek.");
+    parser->addOption(new_instance_option);
 
     QCommandLineOption instance_name_option("instance-name", "Select a specific sioyek instance by name.", "name");
     parser->addOption(instance_name_option);
@@ -2007,7 +2049,13 @@ std::wstring get_canonical_path(const std::wstring& path) {
         return L"";
     }
 #else
-    QDir dir(QString::fromStdWString(path));
+    std::wstring expanded_path = path;
+
+    if (path.size() > 0 && path[0] == '~'){
+        expanded_path = QDir::homePath().toStdWString() + path.substr(1, path.size()-1);
+    }
+
+    QDir dir(QString::fromStdWString(expanded_path));
     //return std::move(dir.canonicalPath().toStdWString());
     return std::move(dir.absolutePath().toStdWString());
 #endif
@@ -3674,7 +3722,7 @@ std::wstring get_paper_name_from_reference_text(std::wstring reference_text) {
 
         QString str = QString::fromStdWString(reference_text);
         //QRegularExpression reference_ending_dot_regex = QRegularExpression("(\.\w*In )|(\.\w*[aA]r[xX]iv )|(\.\w*[aA]r[X]iv )");
-        QRegularExpression reference_ending_dot_regex = QRegularExpression("(\.\w*In )|(\.\w*[aA]r[xX]iv )");
+        QRegularExpression reference_ending_dot_regex = QRegularExpression("(\\.\\w*In )|(\\.\w*[aA]r[xX]iv )");
 
         int ending_index = str.lastIndexOf(reference_ending_dot_regex);
         if (ending_index == -1) {
@@ -3853,7 +3901,7 @@ bool is_text_refernce_rather_than_paper_name(std::wstring text) {
         return true;
     }
 
-    QStringList parts = QString::fromStdWString(text).split(QRegularExpression("[ \(\)]"));
+    QStringList parts = QString::fromStdWString(text).split(QRegularExpression("[ \\(\\)]"));
     for (int i = 0; i < parts.size(); i++) {
         if (is_year(parts[i])) {
             return true;
@@ -3947,7 +3995,7 @@ std::vector<SearchResult> search_text_with_index(const std::wstring& super_fast_
         //std::deque<fz_rect> match_rects;
         //std::vector<fz_rect> compressed_match_rects;
 
-        while ((match_page < page_begin_indices.size() - 1) && page_begin_indices[match_page + 1] < start_index) match_page++;
+        while ((match_page < page_begin_indices.size() - 1) && page_begin_indices[match_page + 1] <= start_index) match_page++;
 
         if (match_page >= begin_page) {
             is_before = false;
@@ -4483,6 +4531,8 @@ bool is_platform_control_pressed(QKeyEvent* kevent){
 }
 
 std::vector<std::wstring> get_last_opened_file_name() {
+    if (!OPEN_LAST_FILE_ON_STARTUP) return {};
+
     static bool is_cached = false;
     static std::vector<std::wstring> cached_result = {};
 
@@ -4492,6 +4542,9 @@ std::vector<std::wstring> get_last_opened_file_name() {
     std::ifstream last_state_file(last_opened_file_address_path.get_path_utf8());
     std::vector<std::wstring> res;
     while (std::getline(last_state_file, file_path_)) {
+        if (file_path_.rfind("[window]", 0) == 0) {
+            continue;
+        }
         res.push_back(utf8_decode(file_path_));
     }
     last_state_file.close();
@@ -4499,4 +4552,42 @@ std::vector<std::wstring> get_last_opened_file_name() {
     is_cached = true;
 
     return res;
+}
+
+std::vector<WindowState> get_last_saved_windows_states() {
+    std::vector<WindowState> states;
+    std::ifstream last_state_file(last_opened_file_address_path.get_path_utf8());
+    if (!last_state_file.is_open()) {
+        return states;
+    }
+    std::string line;
+    while (std::getline(last_state_file, line)) {
+        if (line.empty()) continue;
+        if (line.rfind("[window]", 0) == 0) {
+            WindowState state;
+            if (line.size() > 9) {
+                state.geometry_hex = line.substr(9);
+            }
+            states.push_back(state);
+        } else {
+            if (states.empty()) {
+                WindowState state;
+                states.push_back(state);
+            }
+            states.back().tabs.push_back(utf8_decode(line));
+        }
+    }
+    last_state_file.close();
+    return states;
+}
+
+bool stext_page_has_lines(fz_stext_page* page) {
+    LL_ITER(block, page->first_block) {
+        if (block->type == FZ_STEXT_BLOCK_TEXT) {
+            LL_ITER(line, block->u.t.first_line) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
