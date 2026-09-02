@@ -220,7 +220,7 @@ mac {
     }
 
     CONFIG+=sdk_no_version_check
-    QMAKE_MACOSX_DEPLOYMENT_TARGET = 11
+    QMAKE_MACOSX_DEPLOYMENT_TARGET = 14
     ICON = pdf_viewer\icon2.ico
     QMAKE_INFO_PLIST = resources/Info.plist
     LIBS += -framework AppKit
