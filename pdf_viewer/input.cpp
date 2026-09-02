@@ -6891,27 +6891,43 @@ void CommandManager::update_command_last_use(std::string command_name) {
 }
 
 void CommandManager::handle_new_javascript_command(std::wstring command_name_, JsCommandInfo info, bool is_async) {
-        std::string command_name = utf8_encode(command_name_);
-        auto [command_parent_file_path, command_file_path, entry_point] = info;
+    std::string command_name = utf8_encode(command_name_);
+    auto [command_parent_file_path, command_file_path, entry_point] = info;
 
-        QDir parent_dir = QFileInfo(QString::fromStdWString(command_parent_file_path)).dir();
-        QFileInfo javascript_file_info(QString::fromStdWString(command_file_path));
-        QString absolute_file_path;
+    QDir parent_dir = QFileInfo(QString::fromStdWString(command_parent_file_path)).dir();
+    QFileInfo javascript_file_info(QString::fromStdWString(command_file_path));
 
-        if (javascript_file_info.isRelative()){
-            absolute_file_path = parent_dir.absoluteFilePath(javascript_file_info.filePath());
-        }
-        else{
-            absolute_file_path = javascript_file_info.absoluteFilePath();
-        }
-        QFile code_file(absolute_file_path);
-        if (code_file.open(QIODevice::ReadOnly)) {
-            QTextStream in(&code_file);
-            QString code = in.readAll();
-            new_commands[command_name] = [command_name, code, entry_point=entry_point, is_async, this](MainWidget* w) {
-                return std::make_unique<JavascriptCommand>(command_name, code.toStdWString(), entry_point, is_async, w);
-                };
-        }
+    QString absolute_file_path;
+    if (javascript_file_info.isRelative()){
+        absolute_file_path = parent_dir.absoluteFilePath(javascript_file_info.filePath());
+    }
+    else{
+        absolute_file_path = javascript_file_info.absoluteFilePath();
+    }
+
+    QFile code_file(absolute_file_path);
+    if (!code_file.exists()) {
+        qWarning() << "\nJavaScript command file not found:" << QString::fromStdString(command_name);
+        qWarning() << "Attempted paths:";
+        qWarning() << "  Config file:" << QString::fromStdWString(command_parent_file_path);
+        qWarning() << "  Parent dir:" << parent_dir.absolutePath();
+        qWarning() << "  JS path in config:" << QString::fromStdWString(command_file_path);
+        qWarning() << "  Resolved path:" << absolute_file_path;
+        return;
+    }
+
+    if (!code_file.open(QIODevice::ReadOnly)) {
+        qWarning() << "\nFailed to open JavaScript file for command:" << QString::fromStdString(command_name);
+        qWarning() << "Path:" << absolute_file_path;
+        qWarning() << "Error:" << code_file.errorString();
+        return;
+    }
+
+    QTextStream in(&code_file);
+    QString code = in.readAll();
+    new_commands[command_name] = [command_name, code, entry_point=entry_point, is_async, this](MainWidget* w) {
+        return std::make_unique<JavascriptCommand>(command_name, code.toStdWString(), entry_point, is_async, w);
+    };
 }
 
 std::unique_ptr<Command> CommandManager::get_command_with_name(MainWidget* w, std::string name) {
