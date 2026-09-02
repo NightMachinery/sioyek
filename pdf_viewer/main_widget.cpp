@@ -1753,6 +1753,14 @@ void MainWidget::keyReleaseEvent(QKeyEvent* kevent) {
     key_event(true, kevent, kevent->isAutoRepeat());
 }
 
+void MainWidget::focusOutEvent(QFocusEvent* ev) {
+    // Key releases are delivered to whichever widget has focus, so once we
+    // lose focus we can no longer trust keyStates; clear it to avoid a key
+    // being reported as held forever (e.g. x/z modifying wheel scrolling).
+    keyStates.clear();
+    QWidget::focusOutEvent(ev);
+}
+
 void MainWidget::validate_render() {
 
     if (smooth_scroll_mode) {
@@ -4956,6 +4964,11 @@ void MainWidget::changeEvent(QEvent* event) {
       set_color_mode_to_system_theme();
     }
 #endif
+
+    if (event->type() == QEvent::ActivationChange && !isActiveWindow()) {
+        // see focusOutEvent
+        keyStates.clear();
+    }
 
     QWidget::changeEvent(event);
 }

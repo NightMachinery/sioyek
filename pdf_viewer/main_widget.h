@@ -833,6 +833,7 @@ protected:
 
 
     void focusInEvent(QFocusEvent* ev);
+    void focusOutEvent(QFocusEvent* ev) override;
     void resizeEvent(QResizeEvent* resize_event) override;
     void changeEvent(QEvent* event) override;
     void mouseMoveEvent(QMouseEvent* mouse_event) override;
