@@ -7,6 +7,8 @@
 #include <unordered_map>
 
 #include <QListWidget>
+#include <QHash>
+#include <QDir>
 #include <QScroller>
 #include <qsizepolicy.h>
 #include <qapplication.h>
@@ -140,6 +142,11 @@ protected:
 
     // should return true when we want to manually handle text change events
     virtual bool on_text_change(const QString& text);
+
+    // should return true when the selector handled the left/right arrow key itself
+    // (in which case the key event is consumed and not forwarded to the line edit)
+    virtual bool on_left_key();
+    virtual bool on_right_key();
 
     virtual QString get_view_stylesheet_type_name() = 0;
 
@@ -617,6 +624,45 @@ private:
     QStringListModel* list_model = nullptr;
     std::function<void(std::wstring)> on_done = nullptr;
     QString last_root = "";
+    // maps the canonical path of a directory to the name (with a trailing separator) of the
+    // subdirectory we most recently left using the left arrow key, so that pressing the right
+    // arrow key can take us back into it
+    QHash<QString, QString> last_child_of_dir;
+
+    QString get_current_directory_path() {
+        QString root_path;
+        QString partial_name;
+        split_root_file(line_edit->text(), root_path, partial_name);
+        return expand_home_dir(root_path);
+    }
+
+    void navigate_to_directory(const QString& full_path) {
+        QString sep = QString(QDir::separator());
+        QString canonical_path = QDir(full_path).canonicalPath();
+        if (canonical_path.size() == 0) {
+            return;
+        }
+        if (!canonical_path.endsWith(sep)) {
+            canonical_path += sep;
+        }
+        // this triggers on_text_change which repopulates list_model
+        line_edit->setText(canonical_path);
+    }
+
+    // must be called after navigate_to_directory (which replaces list_model)
+    void select_entry_named(const QString& name) {
+        int selected_row = 0;
+        for (int i = 0; i < list_model->rowCount(); i++) {
+            if (list_model->data(list_model->index(i, 0)).toString() == name) {
+                selected_row = i;
+                break;
+            }
+        }
+        QModelIndex model_index = list_model->index(selected_row, 0);
+        QListView* view = dynamic_cast<QListView*>(get_view());
+        view->setCurrentIndex(model_index);
+        view->scrollTo(model_index);
+    }
 
 protected:
 
@@ -752,9 +798,67 @@ public:
             parentWidget()->setFocus();
         }
         else {
-            QString canonical_path { QDir(full_path).canonicalPath() };
-            line_edit->setText(canonical_path + sep);
+            navigate_to_directory(full_path);
         }
+    }
+
+    // left arrow key: go up one directory, remembering the directory we came from
+    virtual bool on_left_key() {
+        QString sep = QString(QDir::separator());
+
+        QString current_canonical = QDir(get_current_directory_path()).canonicalPath();
+        if (current_canonical.size() == 0) {
+            return true;
+        }
+
+        QDir current_dir(current_canonical);
+        QString child_name = current_dir.dirName();
+
+        if (!current_dir.cdUp()) {
+            // we are already at the root of the filesystem
+            return true;
+        }
+
+        QString parent_canonical = current_dir.canonicalPath();
+        if (parent_canonical.size() == 0) {
+            return true;
+        }
+
+        if (child_name.size() > 0) {
+            last_child_of_dir[parent_canonical] = child_name + sep;
+        }
+
+        navigate_to_directory(parent_canonical);
+        select_entry_named(child_name.size() > 0 ? (child_name + sep) : QString());
+        return true;
+    }
+
+    // right arrow key: enter the selected directory, or go back into the directory
+    // we most recently left using the left arrow key
+    virtual bool on_right_key() {
+        QString sep = QString(QDir::separator());
+        QString current_path = get_current_directory_path();
+
+        std::optional<QModelIndex> selected_index = get_selected_index();
+        if (selected_index) {
+            QString name = list_model->data(selected_index.value()).toString();
+            bool is_dot_entry = (name == ("." + sep)) || (name == (".." + sep)) || (name == ".") || (name == "..");
+
+            if (name.endsWith(sep) && (!is_dot_entry)) {
+                navigate_to_directory(QDir(current_path).filePath(name));
+                return true;
+            }
+        }
+
+        QString current_canonical = QDir(current_path).canonicalPath();
+        if ((current_canonical.size() > 0) && last_child_of_dir.contains(current_canonical)) {
+            QString child_name = last_child_of_dir.value(current_canonical);
+            QString child_path = QDir(current_canonical).filePath(child_name);
+            if (QFileInfo(child_path).isDir()) {
+                navigate_to_directory(child_path);
+            }
+        }
+        return true;
     }
 };
 

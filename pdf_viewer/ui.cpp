@@ -1571,6 +1571,14 @@ bool BaseSelectorWidget::on_text_change(const QString& text) {
     return false;
 }
 
+bool BaseSelectorWidget::on_left_key() {
+    return false;
+}
+
+bool BaseSelectorWidget::on_right_key() {
+    return false;
+}
+
 void BaseSelectorWidget::set_filter_column_index(int index) {
     proxy_model->setFilterKeyColumn(index);
 }
@@ -1630,6 +1638,16 @@ bool BaseSelectorWidget::eventFilter(QObject* obj, QEvent* event) {
                 key_event->key() == Qt::Key_Right
                 ) {
                 if (!line_edit->hasSelectedText()){
+                    bool is_horizontal = (key_event->key() == Qt::Key_Left) || (key_event->key() == Qt::Key_Right);
+                    bool has_modifiers = (key_event->modifiers() & ~Qt::KeypadModifier) != Qt::NoModifier;
+
+                    if (is_horizontal && (!has_modifiers)) {
+                        bool handled = (key_event->key() == Qt::Key_Left) ? on_left_key() : on_right_key();
+                        if (handled) {
+                            return true;
+                        }
+                    }
+
                     bool is_tree = get_view_stylesheet_type_name() == "QTreeView";
                     if (is_tree || (key_event->key() == Qt::Key_Down) || (key_event->key() == Qt::Key_Up)){
 #ifdef SIOYEK_QT6
