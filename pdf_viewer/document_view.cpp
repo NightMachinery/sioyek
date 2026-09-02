@@ -620,9 +620,12 @@ bool DocumentView::previous_page_smart() {
 			if (move_pages(-1)) {
 				goto_right_smart();
 				goto_bottom_of_page();
+			} else {
+				return false;
 			}
 		}
 	}
+	return true;
 }
 
 bool DocumentView::next_page_smart() {
@@ -645,6 +648,7 @@ bool DocumentView::next_page_smart() {
 			}
 		}
 	}
+	return true;
 }
 
 float DocumentView::set_zoom_level(float zl, bool should_exit_auto_resize_mode, bool readjust) {
@@ -1324,11 +1328,12 @@ bool DocumentView::goto_top_of_page() {
     int current_page = get_center_page_number();
     float offset_y = get_document()->get_accum_page_height(current_page) + static_cast<float>(view_height) / 2.0f / zoom_level;
     set_offset_y(offset_y);
+    float new_offset_y = get_offset_y();
 
-	// qDebug() << "offset_y:" << offset_y << "previous_offset_y:" << previous_offset_y;
+	// qDebug() << "offset_y:" << new_offset_y << "previous_offset_y:" << previous_offset_y;
 
 	auto acceptable_margin = GOTO_TOPBOTTOM_SMART_ACCEPTABLE_MARGIN;
-	return ((-(offset_y - previous_offset_y)) > acceptable_margin);
+	return ((-(new_offset_y - previous_offset_y)) > acceptable_margin);
 	// returns whether we moved more to the top or not
 }
 
@@ -1342,11 +1347,12 @@ bool DocumentView::goto_bottom_of_page() {
         offset_y = get_document()->get_accum_page_height(current_page) + get_document()->get_page_height(current_page) - static_cast<float>(view_height) / 2.0f / zoom_level;
     }
     set_offset_y(offset_y);
+    float new_offset_y = get_offset_y();
 
-	// qDebug() << "offset_y:" << offset_y << "previous_offset_y:" << previous_offset_y;
+	// qDebug() << "offset_y:" << new_offset_y << "previous_offset_y:" << previous_offset_y;
 
 	auto acceptable_margin = GOTO_TOPBOTTOM_SMART_ACCEPTABLE_MARGIN;
-	return (((offset_y - previous_offset_y)) > acceptable_margin);
+	return (((new_offset_y - previous_offset_y)) > acceptable_margin);
 	// returns whether we moved more to the bottom or not
 }
 
