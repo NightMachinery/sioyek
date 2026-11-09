@@ -41,27 +41,36 @@ The installed copy is `/Applications/sioyek.app`. Replacing it:
 ```
 trash -- /Applications/sioyek.app          # keep the old bundle recoverable
 cp -R build/sioyek.app /Applications/
-codesign --force --sign - --deep /Applications/sioyek.app
+macos-local-signing codesign "Sioyek Local Signing" --force --deep /Applications/sioyek.app
 ```
 
-- The bundle is owned by the current user, so `codesign` does not need
-  `sudo`.
-- The ad-hoc signature is required or macOS refuses to launch the freshly
-  copied binary.
-- Check `/Applications/sioyek.app/Contents/MacOS/` for `*.db` files before
-  trashing the bundle. Older layouts stored the databases there; if any
-  exist, copy them aside first and restore them after the copy. Currently
-  the databases live in the standard data directory, not in the bundle.
+- Signing uses a stable self-signed certificate from
+  [macos-local-signing](https://github.com/NightMachinery/macos-local-signing).
+  An ad hoc signature (`codesign --sign -`) identifies the app by the hash of
+  that one build, so every rebuild loses macOS privacy grants such as folder
+  access. The certificate signature identifies it by bundle id and
+  certificate, which survive rebuilds. Create the identity once per Mac, at
+  its screen (it shows one password dialog):
+  `macos-local-signing ensure "Sioyek Local Signing"`. Without it, fall back
+  to `codesign --force --deep --sign - /Applications/sioyek.app`.
+- The bundle is owned by the current user, so neither needs `sudo`.
+- Some signature is required, or macOS refuses to launch the freshly copied
+  binary.
+- Add nothing to the bundle after signing: an added file breaks the seal
+  (`codesign --verify --deep --strict` reports "a sealed resource is missing
+  or invalid"). Older layouts kept `*.db` files in `Contents/MacOS/`; sioyek
+  on macOS now reads them only from `~/Library/Application Support/sioyek/`.
 - A running sioyek keeps executing the old binary. Quit and relaunch it to
   pick up the new build.
 
 The same steps exist as the `build-sioyek` shell function in the
-developer's dotfiles, which also handles the database backup.
+developer's dotfiles.
 
 ## Sanity checks after installing
 
 ```
-codesign -dv /Applications/sioyek.app        # Signature=adhoc
+codesign -dvv /Applications/sioyek.app 2>&1 | grep Authority  # Authority=Sioyek Local Signing
+codesign --verify --deep --strict /Applications/sioyek.app   # no output when the seal is intact
 grep -c file_selector_extensions /Applications/sioyek.app/Contents/Resources/prefs.config
 ```
 
