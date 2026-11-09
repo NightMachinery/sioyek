@@ -258,8 +258,8 @@ void configure_paths() {
     Path read_only_data_path = Path(L"/usr/share/sioyek");
     standard_data_path.create_directories();
 
-    default_config_path = standard_config_path.slash(L"prefs.config");
-    default_keys_path = standard_config_path.slash(L"keys.config");
+    default_config_path = read_only_data_path.slash(L"prefs.config");
+    default_keys_path = read_only_data_path.slash(L"keys.config");
 
     database_file_path = standard_data_path.slash(L"test.db");
     local_database_file_path = standard_data_path.slash(L"local.db");
@@ -885,6 +885,7 @@ int main(int argc, char* args[]) {
 
     MainWidget* main_widget = new MainWidget(mupdf_context, &db_manager, &document_manager, &config_manager, command_manager, &input_handler, &checksummer, &quit, pdf_renderer);
     windows.push_back(main_widget);
+    main_widget->open_tabs(get_last_opened_file_name());
 
 #ifndef SIOYEK_ANDROID
     guard.on_delete = std::move([&](QLocalSocket* deleted_socket) {

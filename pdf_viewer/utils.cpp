@@ -163,6 +163,10 @@ void get_flat_toc(const std::vector<TocNode*>& roots, std::vector<std::wstring>&
 TocNode* get_toc_node_from_indices_helper(const std::vector<TocNode*>& roots, const std::vector<int>& indices, int pointer) {
     assert(pointer >= 0);
 
+    if (indices[pointer] < 0 || static_cast<size_t>(indices[pointer]) >= roots.size()) {
+        return nullptr;
+    }
+
     if (pointer == 0) {
         return roots[indices[pointer]];
     }
@@ -172,6 +176,9 @@ TocNode* get_toc_node_from_indices_helper(const std::vector<TocNode*>& roots, co
 
 TocNode* get_toc_node_from_indices(const std::vector<TocNode*>& roots, const std::vector<int>& indices) {
     // Get a table of contents item by recursively indexing using `indices`
+    if (indices.empty()) {
+        return nullptr;
+    }
     return get_toc_node_from_indices_helper(roots, indices, indices.size() - 1);
 }
 
