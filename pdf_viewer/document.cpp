@@ -1159,7 +1159,11 @@ void Document::load_page_dimensions(bool force_load_now) {
             page_dims_mutex.unlock();
 
             fill_highlight_rects(context_, doc_);
-            detected_paper_name = detect_paper_name(context_, doc_);
+            std::wstring paper_name = detect_paper_name(context_, doc_);
+            // the main thread reads detected_paper_name (e.g. when persisting right after opening)
+            page_dims_mutex.lock();
+            detected_paper_name = paper_name;
+            page_dims_mutex.unlock();
             //db_manager->set_actual_document_name(get_checksum(), detected_paper_name);
 
             fz_drop_document(context_, doc_);
@@ -4455,7 +4459,10 @@ std::wstring Document::detect_paper_name() {
 
 std::wstring Document::detect_paper_name(fz_context* context, fz_document* doc) {
 
-    if (detected_paper_name.size() > 0) return detected_paper_name;
+    {
+        std::lock_guard guard(page_dims_mutex);
+        if (detected_paper_name.size() > 0) return detected_paper_name;
+    }
 
     fz_stext_page* stext_page = get_stext_with_page_number(context, 0, doc);
     if (stext_page) {
@@ -4709,6 +4716,7 @@ std::optional<QVariant> Document::get_extra(QString name) {
 }
 
 std::wstring Document::get_detected_paper_name_if_exists() {
+    std::lock_guard guard(page_dims_mutex);
     return detected_paper_name;
 }
 
