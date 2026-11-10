@@ -91,10 +91,10 @@ The bug is unfixed in upstream mupdf as of 2026-11-10. Upstream status:
 
 - The fix, rebased on upstream master, is the branch
   `pdf-store-cmp-key-cross-document` of https://github.com/NightMachinery/mupdf.
-- The GitHub mirror `ArtifexSoftware/mupdf` has issues disabled and refused a
-  pull request from an outside account (2026-11-10). Bugs are tracked at
-  https://bugs.ghostscript.com, which needs an account, so the report still
-  has to be filed there by hand.
+- Reported as https://bugs.ghostscript.com/show_bug.cgi?id=709981
+  (2026-11-10), with the fix attached. The GitHub mirror
+  `ArtifexSoftware/mupdf` has issues disabled and refuses pull requests from
+  outside accounts, so Bugzilla is the only channel.
 - Once upstream fixes it and the submodule is bumped past the fix,
   `scripts/apply_mupdf_patches.sh` will fail on this patch. Delete the patch
   file then.
