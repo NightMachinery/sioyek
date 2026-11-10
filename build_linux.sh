@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -e
 
+# Local fixes carried against the mupdf submodule (see docs/mupdf-patches.md).
+./scripts/apply_mupdf_patches.sh
+
 # Compile mupdf
 cd mupdf
 make USE_SYSTEM_HARFBUZZ=yes -j$(nproc)

@@ -177,6 +177,7 @@ unix:!mac:!android {
 
     CONFIG(linux_app_image){
         LIBS += -ldl -Lmupdf/build/release -lmupdf -lmupdf-third -lmupdf-threads -lharfbuzz -lz
+        PRE_TARGETDEPS += $$PWD/mupdf/build/release/libmupdf.a $$PWD/mupdf/build/release/libmupdf-third.a
     } else {
         DEFINES += NON_PORTABLE
         DEFINES += LINUX_STANDARD_PATHS
@@ -214,6 +215,9 @@ mac {
     QMAKE_CXXFLAGS += -std=c++20
     LIBS += -ldl -L$$PWD/mupdf/build/release -lmupdf -lmupdf-third -lmupdf-threads -lz
     LIBS += -L$$(LIBRARY_PATH)
+    # relink when the bundled mupdf is rebuilt (e.g. after a change in patches/mupdf);
+    # without this an incremental build keeps the old library inside the binary
+    PRE_TARGETDEPS += $$PWD/mupdf/build/release/libmupdf.a $$PWD/mupdf/build/release/libmupdf-third.a
 
     contains(DEFINES, "NIGHT_P") {
        LIBS += -lhiredis

@@ -17,6 +17,9 @@ if [[ ! -f ./linuxdeploy-x86_64.AppImage ]]; then
     chmod +x linuxdeploy-plugin-qt-x86_64.AppImage
 fi
 
+# Local fixes carried against the mupdf submodule (see docs/mupdf-patches.md).
+./scripts/apply_mupdf_patches.sh
+
 cd mupdf
 make USE_SYSTEM_HARFBUZZ=yes -j$MAKE_PARALLEL
 cd ..

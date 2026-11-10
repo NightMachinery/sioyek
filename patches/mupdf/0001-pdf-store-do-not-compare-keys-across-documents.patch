@@ -1,0 +1,55 @@
+Subject: [PATCH] pdf: do not compare store keys across documents
+
+Contexts made with fz_clone_context share one fz_store. Store items keyed
+by a direct (non-indirect) pdf_obj, such as an inline shading dictionary,
+are looked up by a linear scan that calls pdf_cmp_key -> pdf_objcmp on
+every such key in the store, including keys bound to documents owned by
+other threads. When two dictionaries compare equal, do_objcmp goes on to
+read the xref of each object's document (pdf_get_xref_entry_no_change,
+pdf_obj_num_is_stream). That reads another thread's xref without locking,
+and pdf_drop_document_imp frees the xref sections before it calls
+pdf_empty_store, so a concurrent lookup can read freed memory.
+
+Observed crash (SIGSEGV in a render thread):
+  pdf_get_xref_entry_aux <- do_objcmp <- do_objcmp <- fz_find_item
+  <- pdf_load_shading <- ... <- fz_new_pixmap_from_page_number
+
+Keys bound to different documents never name the same resource (indirect
+references inside them compare by object number only, so a cross-document
+match would even be a false hit), so report them as different before
+pdf_objcmp looks inside them. pdf_get_bound_document only reads the
+object's own doc field.
+
+Base: mupdf d189cc13194a1e32026b6161b543df02c120aac2. Still present in
+upstream master as of 2026-11-10.
+
+diff --git a/source/pdf/pdf-store.c b/source/pdf/pdf-store.c
+index 93f89b914..666f4fc9c 100644
+--- a/source/pdf/pdf-store.c
++++ b/source/pdf/pdf-store.c
+@@ -52,7 +52,24 @@ pdf_drop_key(fz_context *ctx, void *key)
+ static int
+ pdf_cmp_key(fz_context *ctx, void *k0, void *k1)
+ {
+-	return pdf_objcmp(ctx, (pdf_obj *)k0, (pdf_obj *)k1);
++	pdf_obj *a = (pdf_obj *)k0;
++	pdf_obj *b = (pdf_obj *)k1;
++
++	/* The store is shared by every context cloned from the same base
++	 * context, so it can hold keys bound to documents that other threads
++	 * are using, or are in the middle of dropping (pdf_drop_document frees
++	 * the xref before it empties the store of that document's items).
++	 * pdf_objcmp on two equal-looking dicts ends up reading the xref of
++	 * each object's document, so comparing against a key of another
++	 * document would read that document's xref without any locking, and
++	 * possibly after it was freed. Keys of different documents never
++	 * name the same resource anyway (indirect references inside them only
++	 * compare by number), so treat them as different without looking
++	 * further than the objects' own document fields. */
++	if (pdf_get_bound_document(ctx, a) != pdf_get_bound_document(ctx, b))
++		return 1;
++
++	return pdf_objcmp(ctx, a, b);
+ }
+ 
+ static void
