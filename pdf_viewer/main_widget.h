@@ -304,6 +304,8 @@ public:
     // lower value when in smooth scroll mode or when user flicks a document in touch mode
     QTimer* validation_interval_timer = nullptr;
     QDateTime last_persistance_datetime;
+    // what get_persistence_snapshot() returned at the last persist
+    std::string last_persisted_snapshot;
 
     std::deque<ClickSpaceTime> recent_clicks;
 
@@ -452,6 +454,10 @@ public:
     #endif
 
     void persist(bool persist_drawings = false);
+    std::string get_persistence_snapshot();
+    // set by main.cpp once the previous session has been restored; until then persist() does not
+    // overwrite the last opened file
+    static inline bool startup_restore_done = false;
     bool is_pending_link_source_filled();
     std::wstring get_status_string(bool is_right);
     void handle_escape();

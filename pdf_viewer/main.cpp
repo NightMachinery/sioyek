@@ -945,6 +945,17 @@ int main(int argc, char* args[]) {
     QCoreApplication::processEvents();
 
     handle_args(app.arguments());
+
+    // the previous session is restored, from now on persist() may overwrite the last opened file.
+    // record the startup state right away (e.g. a document passed on the command line)
+    MainWidget::startup_restore_done = true;
+    for (auto window : windows) {
+        if (window->doc()) {
+            window->persist();
+            break;
+        }
+    }
+
     main_widget->execute_macro_if_enabled(STARTUP_COMMANDS);
 
     //main_widget->run_multiple_commands(STARTUP_COMMANDS);

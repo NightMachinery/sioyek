@@ -31,6 +31,7 @@
 #include <qboxlayout.h>
 #include <qdatetime.h>
 #include <qfile.h>
+#include <qsavefile.h>
 #include <qdrag.h>
 #include <qmenu.h>
 #include <QThread>
@@ -853,37 +854,78 @@ void MainWidget::update_text_selection(AbsoluteDocumentPos abs_mpos) {
     }
 }
 
+// write the file atomically (temp file + rename) so that a crash mid-write can not leave it empty
+static void write_last_opened_file(const std::string& content) {
+    QSaveFile last_path_file(QString::fromStdWString(last_opened_file_address_path.get_path()));
+    if (last_path_file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        last_path_file.write(content.data(), content.size());
+        last_path_file.commit();
+    }
+}
+
+std::string MainWidget::get_persistence_snapshot() {
+    // a cheap summary of what persist() writes, used to skip periodic persists when nothing changed
+    std::string res;
+    auto add_window = [&](MainWidget* window, bool add_geometry) {
+        DocumentView* view = window->main_document_view;
+        if (!view->get_document()) return;
+        res += utf8_encode(view->get_document()->get_path()) + "\n";
+        res += std::to_string(view->get_zoom_level()) + " " + std::to_string(view->get_offset_x()) + " " + std::to_string(view->get_offset_y()) + "\n";
+        if (add_geometry) {
+            res += std::string(window->saveGeometry().toHex().constData()) + "\n";
+        }
+        res += utf8_encode(window->get_current_tabs_file_names()) + "\n";
+    };
+
+    if (RESTORE_ALL_WINDOWS_ON_STARTUP) {
+        for (auto window : windows) {
+            add_window(window, true);
+        }
+    }
+    else {
+        add_window(this, false);
+    }
+    return res;
+}
+
 void MainWidget::persist(bool persist_drawings) {
     main_document_view->persist(persist_drawings);
 
+    // while main.cpp is still restoring the previous session, writing the last opened file
+    // would replace it with a partial list of windows/tabs
+    if (!startup_restore_done) return;
+
     if (RESTORE_ALL_WINDOWS_ON_STARTUP) {
-        std::ofstream last_path_file(last_opened_file_address_path.get_path_utf8());
+        std::string last_path_content;
         for (auto window : windows) {
             if (window->main_document_view->get_document()) {
                 window->main_document_view->persist(persist_drawings);
                 QByteArray geom = window->saveGeometry();
                 std::string geom_hex = geom.toHex().constData();
-                last_path_file << "[window] " << geom_hex << "\n";
+                last_path_content += "[window] " + geom_hex + "\n";
                 std::string tabs_str = utf8_encode(window->get_current_tabs_file_names());
-                last_path_file << tabs_str;
+                last_path_content += tabs_str;
                 if (!tabs_str.empty() && tabs_str.back() != '\n') {
-                    last_path_file << "\n";
+                    last_path_content += "\n";
                 }
             }
         }
-        last_path_file.close();
+        write_last_opened_file(last_path_content);
+
+        std::string snapshot = get_persistence_snapshot();
+        for (auto window : windows) {
+            window->last_persisted_snapshot = snapshot;
+        }
     }
     else {
         // write the address of the current document in a file so that the next time
         // we launch the application, we open this document
         if (main_document_view->get_document()) {
-            std::ofstream last_path_file(last_opened_file_address_path.get_path_utf8());
-
             //std::string encoded_file_name_str = utf8_encode(main_document_view->get_document()->get_path());
             std::string encoded_file_name_str = utf8_encode(get_current_tabs_file_names());
-            last_path_file << encoded_file_name_str.c_str() << std::endl;
-            last_path_file.close();
+            write_last_opened_file(std::string(encoded_file_name_str.c_str()) + "\n");
         }
+        last_persisted_snapshot = get_persistence_snapshot();
     }
 }
 void MainWidget::closeEvent(QCloseEvent* close_event) {
@@ -1233,7 +1275,10 @@ MainWidget::MainWidget(fz_context* mupdf_context,
             QDateTime now = QDateTime::currentDateTime();
             if (last_persistance_datetime.secsTo(now) > PERSISTANCE_PERIOD) {
                 last_persistance_datetime = now;
-                persist();
+                // don't write to disk when nothing changed since the last persist
+                if (get_persistence_snapshot() != last_persisted_snapshot) {
+                    persist();
+                }
             }
         }
         if (!PERIODIC_COMMANDS.empty()){
@@ -2178,9 +2223,12 @@ void MainWidget::open_document(const std::wstring& path, std::optional<float> of
         update_scrollbar();
     }
 
-    // save current session
+    // save current session (record the newly opened document right away, so a crash does not lose it)
     if (FAIL_SAFE_AUTO_SAVE_SESSION) {
         persist(true);
+    }
+    else {
+        persist();
     }
 
     deselect_document_indices();
@@ -2231,6 +2279,11 @@ void MainWidget::open_document_at_location(const Path& path_,
     last_smart_fit_page = {};
     opengl_widget->on_document_view_reset();
     show_password_prompt_if_required();
+
+    // record the newly opened document right away, so a crash does not lose it
+    if (has_document) {
+        persist();
+    }
 }
 
 void MainWidget::open_document(const DocumentViewState& state)
@@ -2933,14 +2986,21 @@ void MainWidget::update_current_history_index() {
 
 void MainWidget::set_main_document_view_state(DocumentViewState new_view_state) {
 
+    bool document_changed = false;
     if ((!main_document_view_has_document()) || (main_document_view->get_document()->get_path() != new_view_state.document_path)) {
         open_document(new_view_state.document_path, &this->is_ui_invalidated);
+        document_changed = true;
 
         //setwindowtitle(qstring::fromstdwstring(new_view_state.document_path));
     }
 
     main_document_view->on_view_size_change(main_window_width, main_window_height);
     main_document_view->set_book_state(new_view_state.book_state);
+
+    // record the newly opened document right away, so a crash does not lose it
+    if (document_changed && main_document_view_has_document()) {
+        persist();
+    }
 }
 
 void MainWidget::handle_click(WindowPos click_pos) {
@@ -4662,6 +4722,9 @@ void MainWidget::dropEvent(QDropEvent* event)
         //handle_args(QStringList() << QApplication::applicationFilePath() << QString::fromStdWString(path));
         push_state();
         open_document(path, &is_render_invalidated);
+        if (main_document_view_has_document()) {
+            persist();
+        }
     }
 }
 // #endif
@@ -6599,6 +6662,10 @@ MainWidget* MainWidget::handle_new_window() {
     }
 
     windows.push_back(new_widget);
+    // the persist in open_document ran before the window was in `windows`
+    if (RESTORE_ALL_WINDOWS_ON_STARTUP && new_widget->doc()) {
+        new_widget->persist();
+    }
     return new_widget;
 }
 
@@ -8828,6 +8895,8 @@ void MainWidget::handle_goto_loaded_document() {
                 document_manager->remove_tab(*path);
                 free_document(doc_to_delete.value());
             }
+            // update the saved tab list
+            persist();
         }
         );
     make_current_menu_columns_equal();
