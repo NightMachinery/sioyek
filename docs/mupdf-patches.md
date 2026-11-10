@@ -87,8 +87,17 @@ never touches the document. Lookups within one document behave as before; a
 resource is no longer shared between two open copies of the same file through
 an inline key, which costs at most one extra decode per copy.
 
-The bug is unfixed in upstream mupdf as of 2026-11-10, so this is a candidate
-for an upstream report.
+The bug is unfixed in upstream mupdf as of 2026-11-10. Upstream status:
+
+- The fix, rebased on upstream master, is the branch
+  `pdf-store-cmp-key-cross-document` of https://github.com/NightMachinery/mupdf.
+- The GitHub mirror `ArtifexSoftware/mupdf` has issues disabled and refused a
+  pull request from an outside account (2026-11-10). Bugs are tracked at
+  https://bugs.ghostscript.com, which needs an account, so the report still
+  has to be filed there by hand.
+- Once upstream fixes it and the submodule is bumped past the fix,
+  `scripts/apply_mupdf_patches.sh` will fail on this patch. Delete the patch
+  file then.
 
 ### Reproducer
 
