@@ -438,6 +438,9 @@ public:
     QJsonArray get_marks_json();
 
     std::wstring get_detected_paper_name_if_exists();
+    // whether this looks like a deck of slides made with the LaTeX beamer class (cached)
+    bool is_beamer_slides();
+    std::optional<bool> cached_is_beamer_slides = {};
     std::wstring& get_super_fast_search_index();
     std::vector<int>& get_super_fast_search_page_indices();
 

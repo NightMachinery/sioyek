@@ -282,6 +282,7 @@ extern UIRect LANDSCAPE_MIDDLE_RIGHT_UI_RECT;
 
 extern bool PAPER_DOWNLOAD_CREATE_PORTAL;
 extern bool ALIGN_LINK_DEST_TO_TOP;
+extern bool BEAMER_SLIDES_OPINIONATED_FIXES;
 extern bool USE_KEYBOARD_POINT_SELECTION;
 
 extern bool TOUCH_MODE;
@@ -11346,7 +11347,29 @@ void MainWidget::highlight_link_destination(int page, float y_offset, float x_of
     }
 }
 
+bool MainWidget::should_jump_to_whole_slide() {
+    return BEAMER_SLIDES_OPINIONATED_FIXES
+        && doc()
+        && (!main_document_view->is_presentation_mode())
+        && doc()->is_beamer_slides();
+}
+
+float MainWidget::get_whole_slide_jump_offset(int page) {
+    // the offset within the page that should be at the center of the view: the middle of the
+    // slide when the whole slide fits in the window, otherwise the slide's top is aligned with
+    // the top of the window
+    float page_height = doc()->get_page_height(page);
+    float view_height = main_document_view->view_height_in_document_space();
+    return std::min(page_height, view_height) / 2.0f;
+}
+
 void MainWidget::handle_goto_link_with_page_and_offset(int page, float y_offset, float x_offset) {
+
+    if (should_jump_to_whole_slide()) {
+        // beamer link destinations are the top of a slide, centering that shows two half slides
+        long_jump_to_destination(page, get_whole_slide_jump_offset(page));
+        return;
+    }
 
     if (HIGHLIGHT_LINK_DESTINATION){
         highlight_link_destination(page, y_offset, x_offset);

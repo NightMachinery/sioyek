@@ -1012,6 +1012,7 @@ void Document::reload(std::string password) {
 
     fz_drop_document(context, doc);
     clear_document_caches();
+    cached_is_beamer_slides = {};
 
     doc = nullptr;
 
@@ -4713,6 +4714,51 @@ std::optional<QVariant> Document::get_extra(QString name) {
         return extras[name].toVariant();
     }
     return {};
+}
+
+bool Document::is_beamer_slides() {
+    if (cached_is_beamer_slides.has_value()) return cached_is_beamer_slides.value();
+    if (doc == nullptr) return false;
+
+    bool res = false;
+    fz_page* first_page = nullptr;
+    pdf_obj* needle = nullptr;
+    fz_var(first_page);
+    fz_var(needle);
+
+    fz_try(context) {
+        pdf_document* pdf_doc = pdf_specifics(context, doc);
+        if (pdf_doc && fz_count_pages(context, doc) > 0) {
+            first_page = fz_load_page(context, doc, 0);
+            fz_rect bounds = fz_bound_page(context, first_page);
+            bool is_landscape = (bounds.x1 - bounds.x0) > (bounds.y1 - bounds.y0);
+
+            if (is_landscape) {
+                // beamer gives every frame a named destination Navigation<page number>,
+                // whether or not the navigation symbols are shown
+                needle = pdf_new_string(context, "Navigation1", 11);
+                if (pdf_lookup_dest(context, pdf_doc, needle) != nullptr) {
+                    res = true;
+                }
+                else {
+                    // decks without hyperref targets: beamer still sets the 'replace' page transition
+                    pdf_obj* page_obj = pdf_lookup_page_obj(context, pdf_doc, 0);
+                    pdf_obj* transition = pdf_dict_get(context, page_obj, PDF_NAME(Trans));
+                    res = pdf_name_eq(context, pdf_dict_get(context, transition, PDF_NAME(S)), PDF_NAME(R));
+                }
+            }
+        }
+    }
+    fz_always(context) {
+        pdf_drop_obj(context, needle);
+        fz_drop_page(context, first_page);
+    }
+    fz_catch(context) {
+        res = false;
+    }
+
+    cached_is_beamer_slides = res;
+    return res;
 }
 
 std::wstring Document::get_detected_paper_name_if_exists() {

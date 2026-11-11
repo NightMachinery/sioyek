@@ -2578,6 +2578,12 @@ public:
     void perform() {
         QVariant val = target_location.value();
 
+        if (widget->should_jump_to_whole_slide()) {
+            int page = val.canConvert<int>() ? val.toInt() : val.toList()[0].toInt();
+            widget->main_document_view->goto_offset_within_page(page, widget->get_whole_slide_jump_offset(page));
+            return;
+        }
+
         if (val.canConvert<int>()) {
             int page = val.toInt();
 
