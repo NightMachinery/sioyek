@@ -1479,14 +1479,16 @@ void PdfViewOpenGLWidget::my_render(QPainter* painter) {
                     float page_height = document_view->get_document()->get_page_height(max_page + i);
                     PagelessDocumentRect page_rect({ 0, 0, page_width, page_height });
                     int nh, nv;
-                    num_slices_for_page_rect(page_rect, &nh, &nv);
+                    // an unsliced page is requested with index -1 (see render_page), with index 0
+                    // the prerendered page was never the one that got displayed
+                    bool is_sliced = num_slices_for_page_rect(page_rect, &nh, &nv);
 
                     for (int k = 0; k < nh * nv; k++) {
                         pdf_renderer->find_rendered_page(
                             document_view->get_document()->get_path(),
                             max_page + i,
                             document_view->get_document()->should_render_pdf_annotations(),
-                            k,
+                            is_sliced ? k : -1,
                             nh,
                             nv,
                             document_view->get_zoom_level(),
