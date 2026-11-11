@@ -11355,12 +11355,10 @@ bool MainWidget::should_jump_to_whole_slide() {
 }
 
 float MainWidget::get_whole_slide_jump_offset(int page) {
-    // the offset within the page that should be at the center of the view: the middle of the
-    // slide when the whole slide fits in the window, otherwise the slide's top is aligned with
-    // the top of the window
-    float page_height = doc()->get_page_height(page);
-    float view_height = main_document_view->view_height_in_document_space();
-    return std::min(page_height, view_height) / 2.0f;
+    // the offset within the page that should be at the center of the view so that the slide's top
+    // is aligned with the top of the window, like DocumentView::goto_page (which presentation mode uses).
+    // centering a slide that fits would show a strip of the previous slide above it
+    return main_document_view->view_height_in_document_space() / 2.0f;
 }
 
 void MainWidget::handle_goto_link_with_page_and_offset(int page, float y_offset, float x_offset) {

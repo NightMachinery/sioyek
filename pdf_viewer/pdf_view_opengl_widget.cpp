@@ -78,6 +78,9 @@ extern bool SAME_WIDTH;
 
 extern int NUM_PRERENDERED_NEXT_SLIDES;
 extern int NUM_PRERENDERED_PREV_SLIDES;
+extern bool BEAMER_SLIDES_OPINIONATED_FIXES;
+// upper bound on the link target pages kept rendered for the visible slides
+const int MAX_PRELOADED_LINK_TARGETS = 16;
 
 extern float DEFAULT_SEARCH_HIGHLIGHT_COLOR[3];
 extern float DEFAULT_LINK_HIGHLIGHT_COLOR[3];
@@ -1397,6 +1400,52 @@ void PdfViewOpenGLWidget::my_render(QPainter* painter) {
     clear_background_color();
 
     std::vector<PdfLink> all_visible_links;
+
+    // beamer_slides_opinionated_fixes: keep the pages that the visible slides link to rendered, so
+    // that following a link does not show a blank page first. these are requested before the
+    // visible pages because the render threads serve the most recent request first
+    int num_preloaded_link_targets = 0;
+    if (BEAMER_SLIDES_OPINIONATED_FIXES && doc()->is_beamer_slides()) {
+        std::vector<int> source_pages = visible_pages;
+        if (document_view->is_presentation_mode()) {
+            source_pages = { document_view->get_presentation_page_number().value() };
+        }
+
+        std::vector<int> target_pages;
+        for (int source_page : source_pages) {
+            for (int target_page : doc()->get_page_link_target_pages(source_page)) {
+                if ((int)target_pages.size() >= MAX_PRELOADED_LINK_TARGETS) break;
+                if (std::find(source_pages.begin(), source_pages.end(), target_page) != source_pages.end()) continue;
+                if (std::find(target_pages.begin(), target_pages.end(), target_page) != target_pages.end()) continue;
+                target_pages.push_back(target_page);
+            }
+        }
+
+        for (int target_page : target_pages) {
+            int nh = 1;
+            int nv = 1;
+            bool is_sliced = false;
+            if (!document_view->is_presentation_mode()) {
+                PagelessDocumentRect page_rect({ 0, 0, doc()->get_page_width(target_page), doc()->get_page_height(target_page) });
+                is_sliced = num_slices_for_page_rect(page_rect, &nh, &nv);
+            }
+            for (int k = 0; k < nh * nv; k++) {
+                pdf_renderer->find_rendered_page(
+                    doc()->get_path(),
+                    target_page,
+                    doc()->should_render_pdf_annotations(),
+                    is_sliced ? k : -1,
+                    nh,
+                    nv,
+                    document_view->get_zoom_level(),
+                    devicePixelRatioF(),
+                    nullptr,
+                    nullptr);
+            }
+        }
+        num_preloaded_link_targets = target_pages.size();
+    }
+    pdf_renderer->set_extra_cached_pages(num_preloaded_link_targets);
 
     if (document_view->is_presentation_mode()) {
         int presentation_page_number = document_view->get_presentation_page_number().value();

@@ -9,11 +9,11 @@ LaTeX beamer class. Set `beamer_slides_opinionated_fixes 0` in
 
 ## What changes
 
-A **whole-slide jump** puts the target slide in the middle of the window when
-the slide fits at the current zoom, and aligns the slide's top with the top of
-the window when it does not fit. Following a PDF link (by mouse or with
+A **whole-slide jump** aligns the top of the target slide with the top of the
+window, as presentation mode does. Following a PDF link (by mouse or with
 `open_link`) and choosing an entry in the table of contents (`goto_toc`) are
-whole-slide jumps in a detected deck.
+whole-slide jumps in a detected deck. (A first version centered a slide that
+fits in the window. That left a strip of the previous slide above it.)
 
 Without the option, a link jump centers the link's destination. In a beamer
 deck every destination is the top edge of a slide, so the window showed the
@@ -23,6 +23,20 @@ Presentation mode already shows one page at a time and is unchanged. The
 options `align_link_dest_to_top` and `toc_jump_align_top` are ignored for
 whole-slide jumps. Other jumps (search results, highlights, smart jump,
 marks) are not affected.
+
+## Preloading link targets
+
+Jumping to a page that is not rendered yet shows a blank page for a moment.
+In a detected deck, sioyek therefore keeps the pages that the visible slides
+link to rendered in the background (**link target preloading**), in normal and
+in presentation mode. At most 16 target pages are kept per view, and the
+render cache grows by that many pages while they are needed. A beamer slide
+typically links to each section start and to its neighbours, so this costs
+some memory (one rendered slide per target) in exchange for instant jumps.
+
+A related fix applies to all documents: the page after the last visible one
+was prerendered under a cache key that the display never asked for (slice
+index 0 instead of -1 for unsliced pages), so that prerendering had no effect.
 
 ## How a deck is detected
 
@@ -40,5 +54,6 @@ detected, on purpose: the rule only matches what beamer writes.
 ## Verification status
 
 The detection was checked against a real org-beamer deck (detected) and two
-ordinary PDFs (not detected). The jump itself was not exercised by an
-automated test, because sioyek's link labels need a real OpenGL window.
+ordinary PDFs (not detected). The jumps and the preloading were not exercised
+by an automated test, because they need a real OpenGL window; they rely on
+manual checks.

@@ -287,7 +287,7 @@ void PdfRenderer::delete_old_pages(bool force_all, bool invalidate_all) {
         cached_response_times.push_back(now - cached_responses[i].last_access_time);
     }
 
-    int N = num_cached_pages * NUM_V_SLICES * NUM_H_SLICES;
+    int N = (num_cached_pages + extra_cached_pages) * NUM_V_SLICES * NUM_H_SLICES;
 
     if (invalidate_all) {
         for (size_t i = 0; i < cached_responses.size(); i++) {

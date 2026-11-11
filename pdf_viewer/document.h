@@ -440,6 +440,9 @@ public:
     std::wstring get_detected_paper_name_if_exists();
     // whether this looks like a deck of slides made with the LaTeX beamer class (cached)
     bool is_beamer_slides();
+    // the distinct pages (zero indexed) that the internal links of a page point to (cached)
+    const std::vector<int>& get_page_link_target_pages(int page_number);
+    std::map<int, std::vector<int>> cached_page_link_target_pages;
     std::optional<bool> cached_is_beamer_slides = {};
     std::wstring& get_super_fast_search_index();
     std::vector<int>& get_super_fast_search_page_indices();

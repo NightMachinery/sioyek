@@ -85,6 +85,8 @@ class PdfRenderer : public QObject {
     std::vector<std::mutex> pixmap_drop_mutex;
     std::vector<fz_context*> thread_contexts;
     int num_cached_pages = 5;
+    // pages kept in the cache on top of num_cached_pages, for preloaded link targets
+    int extra_cached_pages = 0;
 
     std::mutex searching_mutex;
     std::vector<std::mutex> thread_rendering_mutex;
@@ -137,6 +139,7 @@ public:
     void add_password(std::wstring path, std::string password);
     void debug();
     void set_num_cached_pages(int n_cached_pages);
+    void set_extra_cached_pages(int n_extra_pages) { extra_cached_pages = n_extra_pages; }
 
 signals:
     void render_advance();

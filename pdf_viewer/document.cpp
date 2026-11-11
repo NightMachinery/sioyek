@@ -3236,6 +3236,7 @@ void Document::clear_document_caches() {
     }
 
     cached_num_pages = {};
+    cached_page_link_target_pages.clear();
     cached_fastread_highlights.clear();
     cached_line_texts.clear();
     cached_page_line_rects.clear();
@@ -4714,6 +4715,31 @@ std::optional<QVariant> Document::get_extra(QString name) {
         return extras[name].toVariant();
     }
     return {};
+}
+
+const std::vector<int>& Document::get_page_link_target_pages(int page_number) {
+    auto cached = cached_page_link_target_pages.find(page_number);
+    if (cached != cached_page_link_target_pages.end()) return cached->second;
+
+    std::vector<int> targets;
+    int n_pages = num_pages();
+    for (const PdfLink& link : get_page_merged_pdf_links(page_number)) {
+        if (link.uri.empty() || link.uri.compare(0, 4, "http") == 0 || link.uri.compare(0, 4, "file") == 0) continue;
+
+        int target = -1;
+        fz_try(context) {
+            target = parse_uri(context, doc, link.uri).page - 1;
+        }
+        fz_catch(context) {
+            target = -1;
+        }
+        if (target >= 0 && target < n_pages && target != page_number
+            && std::find(targets.begin(), targets.end(), target) == targets.end()) {
+            targets.push_back(target);
+        }
+    }
+    cached_page_link_target_pages[page_number] = targets;
+    return cached_page_link_target_pages[page_number];
 }
 
 bool Document::is_beamer_slides() {
