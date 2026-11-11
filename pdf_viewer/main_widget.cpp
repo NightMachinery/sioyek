@@ -11354,18 +11354,57 @@ bool MainWidget::should_jump_to_whole_slide() {
         && doc()->is_beamer_slides();
 }
 
+std::optional<float> MainWidget::get_whole_slide_snap_zoom(int page) {
+    // when a slide nearly fills the window's height, a jump snaps the zoom to the exact fit, so
+    // that no strip of a neighbouring slide is left above or below it. the status bar is drawn
+    // over the bottom of the view, so the visible height excludes it (presentation mode does the same)
+    float statusbar_height = status_label->isVisible() ? status_label->height() : 0;
+    float page_width = doc()->get_page_width(page);
+    float page_height = doc()->get_page_height(page);
+    if (page_width <= 0 || page_height <= 0) return {};
+
+    float x_zoom_level = main_document_view->get_view_width() / page_width;
+    float y_zoom_level = (main_document_view->get_view_height() - statusbar_height) / page_height;
+    // only when the height is what limits the fit, otherwise a fitted slide still has space above and below
+    if (y_zoom_level > x_zoom_level) return {};
+
+    float ratio = main_document_view->get_zoom_level() / y_zoom_level;
+    if (ratio < 0.95f || ratio > 1.05f) return {};
+    return y_zoom_level;
+}
+
 float MainWidget::get_whole_slide_jump_offset(int page) {
-    // the offset within the page that should be at the center of the view so that the slide's top
-    // is aligned with the top of the window, like DocumentView::goto_page (which presentation mode uses).
+    // the offset within the page that should be at the center of the view
+    std::optional<float> snap_zoom = get_whole_slide_snap_zoom(page);
+    if (snap_zoom) {
+        // the slide exactly fills the area above the status bar
+        float statusbar_height = status_label->isVisible() ? status_label->height() : 0;
+        return doc()->get_page_height(page) / 2.0f + statusbar_height / (2.0f * snap_zoom.value());
+    }
+    // otherwise align the slide's top with the top of the window, like DocumentView::goto_page.
     // centering a slide that fits would show a strip of the previous slide above it
     return main_document_view->view_height_in_document_space() / 2.0f;
+}
+
+void MainWidget::whole_slide_jump(int page, bool is_long_jump) {
+    std::optional<float> snap_zoom = get_whole_slide_snap_zoom(page);
+    float offset = get_whole_slide_jump_offset(page);
+    if (is_long_jump) {
+        long_jump_to_destination(page, offset);
+    }
+    else {
+        main_document_view->goto_offset_within_page(page, offset);
+    }
+    if (snap_zoom && (!is_pending_link_source_filled())) {
+        main_document_view->set_zoom_level(snap_zoom.value(), true);
+    }
 }
 
 void MainWidget::handle_goto_link_with_page_and_offset(int page, float y_offset, float x_offset) {
 
     if (should_jump_to_whole_slide()) {
         // beamer link destinations are the top of a slide, centering that shows two half slides
-        long_jump_to_destination(page, get_whole_slide_jump_offset(page));
+        whole_slide_jump(page, true);
         return;
     }
 

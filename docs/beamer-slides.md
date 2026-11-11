@@ -9,11 +9,22 @@ LaTeX beamer class. Set `beamer_slides_opinionated_fixes 0` in
 
 ## What changes
 
-A **whole-slide jump** aligns the top of the target slide with the top of the
-window, as presentation mode does. Following a PDF link (by mouse or with
-`open_link`) and choosing an entry in the table of contents (`goto_toc`) are
-whole-slide jumps in a detected deck. (A first version centered a slide that
-fits in the window. That left a strip of the previous slide above it.)
+A **whole-slide jump** shows the target slide the way presentation mode
+does. Following a PDF link (by mouse or with `open_link`) and choosing an entry
+in the table of contents (`goto_toc`) are whole-slide jumps in a detected deck.
+A whole-slide jump does one of two things:
+
+- **Snap to fit.** When the current zoom is within 5% of the zoom at which the
+  slide exactly fills the height of the window above the status bar, and that
+  height is what limits the fit, the jump sets the zoom to that exact fit and
+  centers the slide in that area. No strip of a neighbouring slide remains.
+- **Top alignment.** Otherwise the top of the slide is aligned with the top of
+  the window, and the zoom is left alone. Whatever space is left shows the
+  next slide below.
+
+(Earlier versions centered a slide that fits, which left a strip of the
+previous slide above it, and then only top-aligned, which left a strip below
+it whenever the zoom was a few pixels short of the fit.)
 
 Without the option, a link jump centers the link's destination. In a beamer
 deck every destination is the top edge of a slide, so the window showed the
