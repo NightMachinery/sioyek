@@ -60,6 +60,8 @@ protected:
     bool is_auto_resize_mode = true;
     bool is_ruler_mode_ = false;
     std::optional<int> presentation_page_number;
+    // what the user explicitly chose for the current document, saved per document
+    std::optional<bool> presentation_mode_override;
 
     float page_space_x = 0;
     float page_space_y = 0;
@@ -235,6 +237,10 @@ public:
     void set_presentation_page_number(std::optional<int> page);
     std::optional<int> get_presentation_page_number();
     bool is_presentation_mode();
+    // only the main view of a window restores the presentation mode when it opens a document
+    bool should_restore_presentation_mode = false;
+    void set_presentation_mode_override(bool mode);
+    void restore_presentation_mode();
     VirtualPos absolute_to_virtual_pos(const AbsoluteDocumentPos& abspos);
     VirtualPos document_to_virtual_pos(DocumentPos docpos);
     AbsoluteDocumentPos virtual_to_absolute_pos(const VirtualPos& vpos);

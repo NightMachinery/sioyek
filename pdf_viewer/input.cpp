@@ -2578,9 +2578,11 @@ public:
     void perform() {
         QVariant val = target_location.value();
 
-        if (widget->should_jump_to_whole_slide()) {
+        if (widget->main_document_view->is_presentation_mode()) {
+            // only the page matters here. centering the entry's offset, which is often the page's
+            // top edge, could select the previous page instead
             int page = val.canConvert<int>() ? val.toInt() : val.toList()[0].toInt();
-            widget->whole_slide_jump(page, false);
+            widget->main_document_view->goto_page(page);
             return;
         }
 

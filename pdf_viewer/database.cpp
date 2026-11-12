@@ -1026,6 +1026,46 @@ bool DatabaseManager::set_actual_document_name(const std::string& checksum, cons
 }
 
 
+bool DatabaseManager::create_presentation_modes_table() {
+    // kept out of opened_books: update_book replaces the whole row, and builds without this
+    // table (upstream sioyek sharing the same database) would otherwise erase the value
+    std::lock_guard<std::recursive_mutex> lock(db_mutex);
+
+    const char* create_sql = "CREATE TABLE IF NOT EXISTS presentation_modes ("\
+        "path TEXT PRIMARY KEY,"\
+        "presentation_mode INTEGER);";
+
+    char* error_message = nullptr;
+    int error_code = sqlite3_exec(global_db, create_sql, null_callback, 0, &error_message);
+    return handle_error("create_presentation_modes_table", error_code, error_message);
+}
+
+bool DatabaseManager::set_presentation_mode_override(const std::string& checksum, bool mode) {
+    std::lock_guard<std::recursive_mutex> lock(db_mutex);
+
+    std::wstringstream ss;
+    ss << "insert or replace into presentation_modes(path, presentation_mode) values ('" <<
+        esc(checksum) << "', " << (mode ? 1 : 0) << ");";
+
+    char* error_message = nullptr;
+    int error_code = sqlite3_exec(global_db, utf8_encode(ss.str()).c_str(), null_callback, 0, &error_message);
+    return handle_error("set_presentation_mode_override", error_code, error_message);
+}
+
+std::optional<bool> DatabaseManager::select_presentation_mode_override(const std::string& checksum) {
+    std::lock_guard<std::recursive_mutex> lock(db_mutex);
+
+    std::wstringstream ss;
+    ss << "select presentation_mode from presentation_modes where path='" << esc(checksum) << "'";
+
+    std::vector<int> res;
+    char* error_message = nullptr;
+    int error_code = sqlite3_exec(global_db, utf8_encode(ss.str()).c_str(), id_callback, &res, &error_message);
+    if (!handle_error("select_presentation_mode_override", error_code, error_message)) return {};
+    if (res.empty()) return {};
+    return res[0] != 0;
+}
+
 bool DatabaseManager::select_opened_book(const std::string& book_path, std::vector<OpenedBookState>& out_result) {
     std::lock_guard<std::recursive_mutex> lock(db_mutex);
     std::wstringstream ss;
@@ -1254,6 +1294,7 @@ bool DatabaseManager::select_links(const std::string& src_document_path, std::ve
 void DatabaseManager::create_tables() {
     std::lock_guard<std::recursive_mutex> lock(db_mutex);
     create_opened_books_table();
+    create_presentation_modes_table();
     create_marks_table();
     create_bookmarks_table();
     create_highlights_table();

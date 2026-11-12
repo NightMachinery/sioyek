@@ -32,6 +32,7 @@ private:
     void create_tables();
     bool create_document_hash_table();
     bool create_highlights_table();
+    bool create_presentation_modes_table();
 public:
     bool open(const std::wstring& local_db_file_path, const std::wstring& global_db_file_path);
     bool select_opened_book(const std::string& book_path, std::vector<OpenedBookState>& out_result);
@@ -43,6 +44,9 @@ public:
         std::optional<float> zoom_level = {});
     bool update_mark(const std::string& checksum, char symbol, float offset_y, std::optional<float> offset_x, std::optional<float> zoom_level);
     bool update_book(const std::string& path, float zoom_level, float offset_x, float offset_y, std::wstring actual_name=L"");
+    // the presentation mode the user explicitly chose for a document, if any
+    bool set_presentation_mode_override(const std::string& checksum, bool mode);
+    std::optional<bool> select_presentation_mode_override(const std::string& checksum);
     bool select_mark(const std::string& checksum, std::vector<Mark>& out_result);
     bool insert_bookmark(const std::string& checksum, const std::wstring& desc, float offset_y, std::wstring uuid);
     bool insert_bookmark_marked(const std::string& checksum, const std::wstring& desc, float offset_x, float offset_y, std::wstring uuid);

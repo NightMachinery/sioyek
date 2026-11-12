@@ -10,6 +10,7 @@
 #include "ui.h"
 
 extern float MOVE_SCREEN_PERCENTAGE;
+extern bool BEAMER_SLIDES_OPINIONATED_FIXES;
 extern float FIT_TO_PAGE_WIDTH_RATIO;
 extern float RULER_PADDING;
 extern float RULER_X_PADDING;
@@ -831,6 +832,7 @@ void DocumentView::reset_doc_state() {
     set_offsets(0.0f, 0.0f);
     is_ruler_mode_ = false;
     presentation_page_number = {};
+    presentation_mode_override = {};
     cached_virtual_rects.clear();
     same_width_mode_first_page_width = {};
 }
@@ -901,6 +903,38 @@ void DocumentView::open_document(const std::wstring& doc_path,
                 set_offset_y(view_height / 2 / zoom_level);
             }
         }
+    }
+
+    restore_presentation_mode();
+}
+
+void DocumentView::restore_presentation_mode() {
+    // called after a document is opened: an explicit choice saved for this document wins,
+    // otherwise beamer decks start in presentation mode
+    if ((!should_restore_presentation_mode) || (!current_document)) return;
+
+    std::optional<std::string> checksum = checksummer->get_checksum_fast(current_document->get_path());
+    if (checksum) {
+        presentation_mode_override = db_manager->select_presentation_mode_override(checksum.value());
+    }
+
+    bool mode = presentation_mode_override.has_value()
+        ? presentation_mode_override.value()
+        : (BEAMER_SLIDES_OPINIONATED_FIXES && current_document->is_beamer_slides());
+
+    if (mode) {
+        // MainWidget::validate_render keeps this at the current page
+        presentation_page_number = std::max(get_center_page_number(), 0);
+    }
+    else {
+        presentation_page_number = {};
+    }
+}
+
+void DocumentView::set_presentation_mode_override(bool mode) {
+    presentation_mode_override = mode;
+    if (current_document) {
+        db_manager->set_presentation_mode_override(current_document->get_checksum(), mode);
     }
 }
 

@@ -1,39 +1,52 @@
 # Beamer slides
 
-@Fable5.2, 2026-11-11
+@Fable5.2, 2026-11-12
 
 The option `beamer_slides_opinionated_fixes` (on by default in this fork)
-changes how jumps land in a PDF that sioyek detects as a deck made with the
-LaTeX beamer class. Set `beamer_slides_opinionated_fixes 0` in
-`prefs_user.config` to turn it off.
+changes how sioyek shows a PDF that it detects as a deck made with the LaTeX
+beamer class. Set `beamer_slides_opinionated_fixes 0` in `prefs_user.config`
+to turn it off.
 
-## What changes
+## Presentation mode by default
 
-A **whole-slide jump** shows the target slide the way presentation mode
-does. Following a PDF link (by mouse or with `open_link`) and choosing an entry
-in the table of contents (`goto_toc`) are whole-slide jumps in a detected deck.
-A whole-slide jump does one of two things:
+A detected deck opens in presentation mode. Presentation mode is existing
+sioyek behaviour (`toggle_presentation_mode`), and it does the following:
 
-- **Snap to fit.** When the current zoom is within 5% of the zoom at which the
-  slide exactly fills the height of the window above the status bar, and that
-  height is what limits the fit, the jump sets the zoom to that exact fit and
-  centers the slide in that area. No strip of a neighbouring slide remains.
-- **Top alignment.** Otherwise the top of the slide is aligned with the top of
-  the window, and the zoom is left alone. Whatever space is left shows the
-  next slide below.
+- Only the current page is drawn, without page separators.
+- On every frame the zoom is refit so that the whole page fits the window
+  above the status bar, and the page is centered there. A manual zoom
+  therefore does not stick while the mode is on.
+- Scrolling, the vertical and horizontal move commands and the screen-wise
+  move commands step by whole pages.
+- Following a link goes to the target page, not to an offset within it.
+- The pages after the current one are prerendered when
+  `prerender_next_page_presentation` is set.
 
-(Earlier versions centered a slide that fits, which left a strip of the
-previous slide above it, and then only top-aligned, which left a strip below
-it whenever the zoom was a few pixels short of the fit.)
+An earlier version of this option kept normal mode and tried to imitate that
+layout on link jumps (top alignment, then snapping the zoom). It left strips
+of neighbouring slides in view and was removed in favour of the real mode.
 
-Without the option, a link jump centers the link's destination. In a beamer
-deck every destination is the top edge of a slide, so the window showed the
-bottom half of the previous slide and the top half of the target.
+## Remembered per document
 
-Presentation mode already shows one page at a time and is unchanged. The
-options `align_link_dest_to_top` and `toc_jump_align_top` are ignored for
-whole-slide jumps. Other jumps (search results, highlights, smart jump,
-marks) are not affected.
+Toggling presentation mode by hand (`toggle_presentation_mode`,
+`turn_on_presentation_mode`) records that choice for the document, for every
+PDF and not only decks. The **saved presentation mode** is applied whenever
+the document is opened again and takes precedence over the detection. So a
+deck that you switched back to normal mode stays in normal mode, and an
+ordinary PDF that you left in presentation mode reopens in it.
+
+The choice is stored in the table `presentation_modes` of `shared.db`, keyed
+by the document checksum. It has its own table because the `opened_books` row
+is rewritten as a whole on every save, also by sioyek builds that do not know
+about this value. There is no command yet that forgets a saved choice.
+
+History navigation (`prev_state`, `next_state` and their per-document
+variants) no longer changes presentation mode. Before, going back to a history
+entry recorded in the other mode switched the mode.
+
+A table-of-contents jump in presentation mode now goes to the entry's page.
+Before, it centered the entry's offset, which for an entry at the top edge of
+a page could select the previous page.
 
 ## Preloading link targets
 
@@ -65,6 +78,8 @@ detected, on purpose: the rule only matches what beamer writes.
 ## Verification status
 
 The detection was checked against a real org-beamer deck (detected) and two
-ordinary PDFs (not detected). The jumps and the preloading were not exercised
-by an automated test, because they need a real OpenGL window; they rely on
-manual checks.
+ordinary PDFs (not detected). In a headless instance with its own data
+directory, the deck opened in presentation mode, a toggle was saved, and the
+saved choice was applied after a relaunch. The rendering, the link jumps and
+the preloading were not exercised by an automated test, because they need a
+real OpenGL window; they rely on manual checks.

@@ -455,10 +455,6 @@ public:
 
     void persist(bool persist_drawings = false);
     // beamer_slides_opinionated_fixes: jumps in beamer slides show the whole target slide
-    bool should_jump_to_whole_slide();
-    float get_whole_slide_jump_offset(int page);
-    std::optional<float> get_whole_slide_snap_zoom(int page);
-    void whole_slide_jump(int page, bool is_long_jump);
     std::string get_persistence_snapshot();
     // set by main.cpp once the previous session has been restored; until then persist() does not
     // overwrite the last opened file
