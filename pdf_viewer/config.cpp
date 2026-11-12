@@ -189,6 +189,7 @@ std::wstring STARTUP_COMMANDS = L"";
 bool ALIGN_LINK_DEST_TO_TOP = false;
 // in documents detected as beamer slides, link and table of contents jumps show the whole target slide
 bool BEAMER_SLIDES_OPINIONATED_FIXES = true;
+bool PRESENTATION_MODE_FORCE_FIT = true;
 int MAX_TAB_COUNT = 100;
 float SMALL_PIXMAP_SCALE = 0.75f;
 float DISPLAY_RESOLUTION_SCALE = -1;
@@ -995,6 +996,7 @@ ConfigManager::ConfigManager(const Path& default_path, const Path& auto_path, co
     add_bool(L"fill_textbar_with_selected_text", &FILL_TEXTBAR_WITH_SELECTED_TEXT);
     add_bool(L"align_link_dest_to_top", &ALIGN_LINK_DEST_TO_TOP);
     add_bool(L"beamer_slides_opinionated_fixes", &BEAMER_SLIDES_OPINIONATED_FIXES);
+    add_bool(L"presentation_mode_force_fit", &PRESENTATION_MODE_FORCE_FIT);
     add_bool(L"check_for_updates_on_startup", &SHOULD_CHECK_FOR_LATEST_VERSION_ON_STARTUP);
     add_bool(L"sort_bookmarks_by_location", &SORT_BOOKMARKS_BY_LOCATION);
     add_bool(L"sort_highlights_by_location", &SORT_HIGHLIGHTS_BY_LOCATION);

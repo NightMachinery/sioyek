@@ -15,7 +15,8 @@ sioyek behaviour (`toggle_presentation_mode`), and it does the following:
 - Only the current page is drawn, without page separators.
 - On every frame the zoom is refit so that the whole page fits the window
   above the status bar, and the page is centered there. A manual zoom
-  therefore does not stick while the mode is on.
+  therefore does not stick while the mode is on, unless
+  `presentation_mode_force_fit` is off (see "Zooming in presentation mode").
 - Scrolling, the vertical and horizontal move commands and the screen-wise
   move commands step by whole pages.
 - Following a link goes to the target page, not to an offset within it.
@@ -25,6 +26,23 @@ sioyek behaviour (`toggle_presentation_mode`), and it does the following:
 An earlier version of this option kept normal mode and tried to imitate that
 layout on link jumps (top alignment, then snapping the zoom). It left strips
 of neighbouring slides in view and was removed in favour of the real mode.
+
+## Zooming in presentation mode
+
+`presentation_mode_force_fit` (default 1, the upstream behaviour) controls the
+per-frame refit. With `presentation_mode_force_fit 0`:
+
+- The page is fit and centered only when the page changes, when the mode is
+  turned on, when the window is resized, or when a fit command runs. Between
+  those moments the zoom and the position within the page are left alone.
+- While the zoom is above the fit, scrolling and the move commands pan within
+  the page. The view is clamped to the page, so panning never changes the
+  page. At or below the fit they step by whole pages as before. `next_page`,
+  `previous_page`, links and the table of contents change the page at any zoom.
+- `fit_to_page_width`, `fit_to_page_height`, their `_smart` variants and
+  `fit_to_page_height_and_width_smart` redo the presentation fit, so they
+  double as "reset my zoom". With the option on they are unchanged (and their
+  effect is overwritten by the next frame, as before).
 
 ## Remembered per document
 
@@ -83,6 +101,9 @@ detected, on purpose: the rule only matches what beamer writes.
 The detection was checked against a real org-beamer deck (detected) and two
 ordinary PDFs (not detected). In a headless instance with its own data
 directory, the deck opened in presentation mode, a toggle was saved, and the
-saved choice was applied after a relaunch. The rendering, the link jumps and
+saved choice was applied after a relaunch. With `presentation_mode_force_fit`
+off, `zoom_in` kept its zoom, `move_down` stayed on the page,
+`fit_to_page_height` restored the fit zoom and `next_page` moved one page at
+the fit zoom. The rendering, the link jumps and
 the preloading were not exercised by an automated test, because they need a
 real OpenGL window; they rely on manual checks.

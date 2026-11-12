@@ -283,6 +283,7 @@ extern UIRect LANDSCAPE_MIDDLE_RIGHT_UI_RECT;
 extern bool PAPER_DOWNLOAD_CREATE_PORTAL;
 extern bool ALIGN_LINK_DEST_TO_TOP;
 extern bool BEAMER_SLIDES_OPINIONATED_FIXES;
+extern bool PRESENTATION_MODE_FORCE_FIT;
 extern bool USE_KEYBOARD_POINT_SELECTION;
 
 extern bool TOUCH_MODE;
@@ -1896,7 +1897,30 @@ void MainWidget::validate_render() {
     }
     if (main_document_view->is_presentation_mode()) {
         int current_page = get_current_page_number();
-        if (current_page >= 0) {
+        // with presentation_mode_force_fit off, the page is fit and centered only when it changes
+        // (or the window is resized, or a fit command asks for it). in between, the zoom and the
+        // position within the page belong to the user
+        std::tuple<Document*, int, int, int> fit_key = { doc(), current_page, main_window_width, main_window_height };
+        bool should_fit = PRESENTATION_MODE_FORCE_FIT || (!last_presentation_fit_key.has_value()) || (last_presentation_fit_key.value() != fit_key);
+        if (current_page >= 0 && (!should_fit)) {
+            main_document_view->set_presentation_page_number(current_page);
+            // keep the view inside the page, so that panning never changes the page
+            float zoom = main_document_view->get_zoom_level();
+            float statusbar_height = status_label->isVisible() ? status_label->height() / zoom : 0;
+            float view_height = main_document_view->get_view_height() / zoom;
+            float page_top = doc()->get_accum_page_height(current_page);
+            float page_height = doc()->get_page_height(current_page);
+            if (page_height <= view_height - statusbar_height) {
+                main_document_view->set_offset_y(page_top + page_height / 2 + statusbar_height / 2);
+            }
+            else {
+                float min_offset = page_top + view_height / 2;
+                float max_offset = page_top + page_height - view_height / 2 + statusbar_height;
+                main_document_view->set_offset_y(std::clamp(main_document_view->get_offset_y(), min_offset, max_offset));
+            }
+        }
+        else if (current_page >= 0) {
+            last_presentation_fit_key = fit_key;
             main_document_view->set_presentation_page_number(current_page);
             if (IGNORE_WHITESPACE_IN_PRESENTATION_MODE) {
                 main_document_view->set_offset_y(
@@ -3677,7 +3701,7 @@ void MainWidget::wheelEvent(QWheelEvent* wevent) {
                     }
 
                 }
-                else if (main_document_view->is_presentation_mode()) {
+                else if (is_presentation_paging()) {
                     main_document_view->goto_page(main_document_view->get_center_page_number() - num_repeats);
                     invalidate_render();
                 }
@@ -3703,7 +3727,7 @@ void MainWidget::wheelEvent(QWheelEvent* wevent) {
                         return;
                     }
                 }
-                else if (main_document_view->is_presentation_mode()) {
+                else if (is_presentation_paging()) {
                     main_document_view->goto_page(main_document_view->get_center_page_number() + num_repeats);
                     invalidate_render();
                 }
@@ -4175,7 +4199,34 @@ void MainWidget::toggle_presentation_mode() {
     }
 }
 
+bool MainWidget::request_presentation_refit() {
+    // the fit commands mean "fit the page as presentation mode does" while the mode is on
+    if (PRESENTATION_MODE_FORCE_FIT || (!main_document_view->is_presentation_mode())) return false;
+    last_presentation_fit_key = {};
+    invalidate_render();
+    return true;
+}
+
+bool MainWidget::is_presentation_paging() {
+    // whether scrolling steps through pages. when the user has zoomed into a page
+    // (presentation_mode_force_fit off), scrolling pans within that page instead
+    if (!main_document_view->is_presentation_mode()) return false;
+    if (PRESENTATION_MODE_FORCE_FIT || (!doc())) return true;
+
+    int page = main_document_view->get_presentation_page_number().value();
+    float page_width = doc()->get_page_width(page);
+    float page_height = doc()->get_page_height(page);
+    if (page_width <= 0 || page_height <= 0) return true;
+
+    float statusbar_height = status_label->isVisible() ? status_label->height() : 0;
+    float fit_zoom = std::min(
+        main_document_view->get_view_width() / page_width,
+        (main_document_view->get_view_height() - statusbar_height) / page_height);
+    return main_document_view->get_zoom_level() <= fit_zoom * 1.001f;
+}
+
 void MainWidget::set_presentation_mode(bool mode) {
+    last_presentation_fit_key = {};
     if (mode) {
         main_document_view->set_presentation_page_number(get_current_page_number());
     }
@@ -6144,7 +6195,7 @@ void MainWidget::handle_vertical_move(int amount) {
     if (opengl_widget->get_overview_page()) {
         scroll_overview(amount);
     }
-    else if (main_document_view->is_presentation_mode()) {
+    else if (is_presentation_paging()) {
         main_document_view->move_pages(amount);
     }
     else {
@@ -6156,7 +6207,7 @@ void MainWidget::handle_horizontal_move(int amount) {
     if (opengl_widget->get_overview_page()) {
         return;
     }
-    else if (main_document_view->is_presentation_mode()) {
+    else if (is_presentation_paging()) {
         main_document_view->move_pages(-amount);
         validate_render();
     }
@@ -6655,7 +6706,7 @@ void MainWidget::handle_open_prev_doc() {
 }
 
 void MainWidget::handle_move_screen(int amount) {
-    if (!main_document_view->is_presentation_mode()) {
+    if (!is_presentation_paging()) {
         move_document_screens(amount);
     }
     else {

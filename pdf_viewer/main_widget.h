@@ -399,6 +399,8 @@ public:
     // this value not being `{}` indicates that we are in smart fit mode
     // which means that every time page is changed, we execute `fit_to_page_width_smart`
     std::optional<int> last_smart_fit_page = {};
+    // document, page and window size at the last presentation mode fit, see presentation_mode_force_fit
+    std::optional<std::tuple<Document*, int, int, int>> last_presentation_fit_key = {};
 
     // the command used to perform synctex inverse searches
     std::wstring inverse_search_command;
@@ -500,6 +502,8 @@ public:
     void toggle_fullscreen();
     void toggle_presentation_mode();
     void set_presentation_mode(bool mode);
+    bool request_presentation_refit();
+    bool is_presentation_paging();
     void set_synctex_mode(bool mode);
     void toggle_synctex_mode();
     void complete_pending_link(const PortalViewState& destination_view_state);
