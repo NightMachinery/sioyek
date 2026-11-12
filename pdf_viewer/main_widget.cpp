@@ -5039,6 +5039,8 @@ void MainWidget::handle_link_click(const PdfLink& link) {
     page--;
 
     if (main_document_view->is_presentation_mode()) {
+        // record where the link was followed from, as long_jump_to_destination does in normal mode
+        push_state();
         goto_page_with_page_number(page);
     }
     else {
@@ -6855,6 +6857,7 @@ void MainWidget::handle_open_link(const std::wstring& text, bool copy) {
             else {
                 auto [page, offset_x, offset_y] = parse_uri(mupdf_context, doc()->doc, link.uri);
                 if (main_document_view->is_presentation_mode()) {
+                    push_state();
                     goto_page_with_page_number(page - 1);
                 }
                 else {

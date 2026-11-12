@@ -62,6 +62,10 @@ History navigation (`prev_state`, `next_state` and their per-document
 variants) no longer changes presentation mode. Before, going back to a history
 entry recorded in the other mode switched the mode.
 
+Following a link in presentation mode now adds a history entry, so
+`prev_state` and `prev_state_in_document` return to the slide that held the
+link. Upstream presentation mode jumped without recording one.
+
 A table-of-contents jump in presentation mode now goes to the entry's page.
 Before, it centered the entry's offset, which for an entry at the top edge of
 a page could select the previous page.
