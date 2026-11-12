@@ -1401,11 +1401,12 @@ void PdfViewOpenGLWidget::my_render(QPainter* painter) {
 
     std::vector<PdfLink> all_visible_links;
 
-    // beamer_slides_opinionated_fixes: keep the pages that the visible slides link to rendered, so
-    // that following a link does not show a blank page first. these are requested before the
+    // keep the pages that the visible pages link to rendered, so that following a link does not
+    // show a blank page first: in presentation mode for every document, and in normal mode for
+    // beamer decks (beamer_slides_opinionated_fixes). these are requested before the
     // visible pages because the render threads serve the most recent request first
     int num_preloaded_link_targets = 0;
-    if (BEAMER_SLIDES_OPINIONATED_FIXES && doc()->is_beamer_slides()) {
+    if (document_view->is_presentation_mode() || (BEAMER_SLIDES_OPINIONATED_FIXES && doc()->is_beamer_slides())) {
         std::vector<int> source_pages = visible_pages;
         if (document_view->is_presentation_mode()) {
             source_pages = { document_view->get_presentation_page_number().value() };

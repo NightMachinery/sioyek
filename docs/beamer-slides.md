@@ -51,9 +51,12 @@ a page could select the previous page.
 ## Preloading link targets
 
 Jumping to a page that is not rendered yet shows a blank page for a moment.
-In a detected deck, sioyek therefore keeps the pages that the visible slides
-link to rendered in the background (**link target preloading**), in normal and
-in presentation mode. At most 16 target pages are kept per view, and the
+sioyek therefore keeps the pages that the visible pages link to rendered in
+the background (**link target preloading**). This happens in presentation
+mode for every document, whatever `beamer_slides_opinionated_fixes` is set
+to, and in normal mode for detected decks when the option is on. In a
+document whose pages link to more than 16 other pages (a paper with many
+citations), only the first 16 targets found are preloaded. At most 16 target pages are kept per view, and the
 render cache grows by that many pages while they are needed. A beamer slide
 typically links to each section start and to its neighbours, so this costs
 some memory (one rendered slide per target) in exchange for instant jumps.
