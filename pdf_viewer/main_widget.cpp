@@ -2975,12 +2975,61 @@ void MainWidget::prev_state() {
     }
 }
 
+void MainWidget::prev_state_in_document() {
+    // like prev_state, but skips the history entries of other documents
+    if (!main_document_view_has_document()) return;
+    if (current_history_index < 0) return;
+
+    DocumentViewState current_state = main_document_view->get_state();
+    update_current_history_index();
+
+    if (current_history_index == (static_cast<int>(history.size()) - 1)) {
+        if (!(history.back() == current_state)) {
+            push_state(false);
+        }
+    }
+
+    int index = current_history_index;
+    if (history[index] == current_state) {
+        index--;
+    }
+    while ((index >= 0) && (history[index].document_path != current_state.document_path)) {
+        index--;
+    }
+    if (index < 0) return;
+
+    set_main_document_view_state(history[index]);
+    current_history_index = index - 1;
+}
+
+void MainWidget::next_state_in_document() {
+    // like next_state, but skips the history entries of other documents
+    if (!main_document_view_has_document()) return;
+
+    DocumentViewState current_state = main_document_view->get_state();
+    update_current_history_index();
+
+    // history[current_history_index + 1] is the current state, the candidates come after it
+    int index = current_history_index + 2;
+    while ((index < static_cast<int>(history.size())) && (history[index].document_path != current_state.document_path)) {
+        index++;
+    }
+    if (index >= static_cast<int>(history.size())) return;
+
+    set_main_document_view_state(history[index]);
+    current_history_index = index - 1;
+}
+
 void MainWidget::update_current_history_index() {
     if (main_document_view_has_document()) {
         int index_to_update = current_history_index + 1;
         if (index_to_update < history.size()) {
             DocumentViewState current_state = main_document_view->get_state();
-            history[index_to_update] = current_state;
+            // after prev_state_in_document/next_state_in_document skipped over other documents, this
+            // slot can belong to another document. it must not be replaced by the current document's state
+            if (history[index_to_update].document_path == current_state.document_path) {
+                history[index_to_update] = current_state;
+            }
         }
     }
 }

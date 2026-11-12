@@ -2663,6 +2663,28 @@ public:
     bool requires_document() { return false; }
 };
 
+class NextStateInDocumentCommand : public Command {
+public:
+    static inline const std::string cname = "next_state_in_document";
+    static inline const std::string hname = "Go forward in history, skipping other documents";
+    NextStateInDocumentCommand(MainWidget* w) : Command(cname, w) {};
+
+    void perform() {
+        widget->next_state_in_document();
+    }
+};
+
+class PrevStateInDocumentCommand : public Command {
+public:
+    static inline const std::string cname = "prev_state_in_document";
+    static inline const std::string hname = "Go backward in history, skipping other documents";
+    PrevStateInDocumentCommand(MainWidget* w) : Command(cname, w) {};
+
+    void perform() {
+        widget->prev_state_in_document();
+    }
+};
+
 class PushStateCommand : public Command {
 public:
     static inline const std::string cname = "push_state";
@@ -7368,6 +7390,8 @@ CommandManager::CommandManager(ConfigManager* config_manager) {
     register_command<PortalCommand>();
     register_command<CreateVisiblePortalCommand>();
     register_command<PushStateCommand>();
+    register_command<NextStateInDocumentCommand>();
+    register_command<PrevStateInDocumentCommand>();
     register_command<NextStateCommand>();
     register_command<PrevStateCommand>();
     register_command<NextStateCommand>();

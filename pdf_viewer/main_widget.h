@@ -479,6 +479,8 @@ public:
 
     void next_state();
     void prev_state();
+    void prev_state_in_document();
+    void next_state_in_document();
     void update_current_history_index();
 
     void set_main_document_view_state(DocumentViewState new_view_state);
