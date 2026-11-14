@@ -79,3 +79,32 @@ grep -c file_selector_extensions /Applications/sioyek.app/Contents/Resources/pre
 The personal `prefs_user.config` and `keys_user.config` are hardlinked into
 `~/.config/sioyek/` from a dotfiles repository, so edits to the copies inside
 `pdf_viewer/` in this repository do not affect the installed configuration.
+
+## Installing on a second Mac by copying the build
+
+@Opus5.5, 2026-11-14
+
+A build from `SIOYEK_BUILD_INCREMENTAL_P=y` does not bundle Qt: the binary
+links the Homebrew libraries under `/opt/homebrew/opt/qt/lib` and
+`/opt/homebrew/opt/hiredis/lib` (`otool -L` lists them). To copy it to
+another Mac instead of building there:
+
+- Install the full `qt` formula and `hiredis` on the target. The split Qt
+  formulae (`qtbase` and so on) are not enough, because only `qt` creates the
+  `/opt/homebrew/opt/qt` path the binary uses. A newer Qt 6 on the target is
+  fine: Qt 6 runs programs built against an older 6.x.
+- hiredis 1.5 renamed its library to `libhiredis.1.dylib` (1.2 shipped
+  `libhiredis.1.1.0.dylib`). If the target's file name differs from the one
+  `otool -L` shows, repoint the binary before signing:
+  `install_name_tool -change <old path> <new path> sioyek.app/Contents/MacOS/sioyek`.
+- Copy the bundle with `tar` over ssh, move it into `/Applications`, then sign
+  it on the target with that Mac's own `Sioyek Local Signing` identity and
+  check it with `codesign --verify --deep --strict`.
+- Test it with a headless launch that uses its own home directory
+  (`HOME=<tmp> CFFIXED_USER_HOME=<tmp> QT_QPA_PLATFORM=offscreen ... --instance-name <name>`),
+  so it does not talk to a sioyek that is already running.
+
+Running `macdeployqt` to make the bundle self-contained was tried first and
+left it incomplete (QtDBus, QtConcurrent, QtPdf, the virtual keyboard
+frameworks and `libbrotlicommon` were not copied), so installing the Homebrew
+packages on the target is the simpler route.
