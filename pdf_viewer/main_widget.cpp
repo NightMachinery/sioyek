@@ -2293,7 +2293,18 @@ void MainWidget::open_document_at_location(const Path& path_,
         if (x_loc) {
             main_document_view->set_offset_x(absolute_pos.x);
         }
-        main_document_view->set_offset_y(absolute_pos.y);
+        if (y_loc) {
+            main_document_view->set_offset_y(absolute_pos.y);
+        }
+        else {
+            // no position within the page: show the page from its top. Centering the view on the
+            // page's top edge (y = 0) left the previous page as the center page, so presentation
+            // mode (which keeps the center page) showed page N-1 for `--page N`
+            main_document_view->goto_page(page);
+            if (main_document_view->is_presentation_mode() && page >= 0 && page < doc()->num_pages()) {
+                main_document_view->set_presentation_page_number(page);
+            }
+        }
 
         if (zoom_level) {
             main_document_view->set_zoom_level(zoom_level.value(), true);
