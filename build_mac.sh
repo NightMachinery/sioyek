@@ -50,6 +50,19 @@ cp pdf_viewer/keys.config build/sioyek.app/Contents/Resources/keys.config
 cp pdf_viewer/keys_user.config build/sioyek.app/Contents/Resources/keys_user.config
 cp tutorial.pdf build/sioyek.app/Contents/Resources/tutorial.pdf
 
+if test -n "${SIOYEK_NIGHT_P}" ; then
+    # register the sioyek:// URL scheme (handled in main.cpp, see docs/url-scheme.md)
+    night_plist="build/sioyek.app/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c "Delete :CFBundleURLTypes" "$night_plist" 2> /dev/null || true
+    /usr/libexec/PlistBuddy \
+        -c "Add :CFBundleURLTypes array" \
+        -c "Add :CFBundleURLTypes:0 dict" \
+        -c "Add :CFBundleURLTypes:0:CFBundleURLName string info.sioyek.sioyek.url" \
+        -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" \
+        -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string sioyek" \
+        "$night_plist"
+fi
+
 if test -z "${incremental_p}" ; then
 	# Capture the current PATH
 	CURRENT_PATH=$(echo $PATH)

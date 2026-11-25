@@ -14,7 +14,8 @@ SIOYEK_BUILD_INCREMENTAL_P=y SIOYEK_NIGHT_P=y MAKE_PARALLEL=8 ./build_mac.sh
 - `SIOYEK_BUILD_INCREMENTAL_P=y` skips the release-only steps (bundling Qt,
   clean rebuilds) so repeated builds are fast. Object files land in the
   repository root, which is why it is full of `*.o` and `moc_*` files.
-- `SIOYEK_NIGHT_P=y` enables this fork's additions.
+- `SIOYEK_NIGHT_P=y` enables this fork's additions, including the
+  `sioyek://` URL scheme ([url-scheme.md](url-scheme.md)).
 - Prerequisites come from Homebrew: `qt` (6.9 at the time of writing),
   `freeglut`, `mesa`, `harfbuzz`, `hiredis`.
 - A full build takes several minutes; an incremental one after touching
@@ -73,6 +74,10 @@ codesign -dvv /Applications/sioyek.app 2>&1 | grep Authority  # Authority=Sioyek
 codesign --verify --deep --strict /Applications/sioyek.app   # no output when the seal is intact
 grep -c file_selector_extensions /Applications/sioyek.app/Contents/Resources/prefs.config
 ```
+
+With `SIOYEK_NIGHT_P=y`, also check that `sioyek://` links reach this
+bundle; the Testing section of [url-scheme.md](url-scheme.md) has the
+command, and the `lsregister` call to fix it.
 
 ## User configuration
 

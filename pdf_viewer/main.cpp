@@ -666,6 +666,82 @@ void focus_on_widget(QWidget* widget) {
     widget->setWindowState(widget->windowState() & ~Qt::WindowMinimized | Qt::WindowActive);
 }
 
+#ifdef NIGHT_P
+// Turns `sioyek://open?path=<percent-encoded path>[&page=N]` into the arguments
+// of `sioyek --page N -- <path>`. Any web page can fire a registered URL scheme,
+// so this only ever opens an existing PDF under the home directory, and never
+// passes anything else (commands, macros, options) through. See docs/url-scheme.md.
+std::optional<QStringList> sioyek_url_to_args(const QUrl& url) {
+    auto reject = [&](const QString& reason) -> std::optional<QStringList> {
+        qWarning().noquote() << "sioyek: ignoring URL" << url.toString() << ":" << reason;
+        return {};
+    };
+
+    if (!url.isValid()) return reject("invalid URL");
+    if (url.scheme().compare("sioyek", Qt::CaseInsensitive) != 0) return reject("scheme is not sioyek");
+    // `sioyek://open?...` parses with "open" as the authority
+    if (url.authority() != "open" || !(url.path().isEmpty() || url.path() == "/") || url.hasFragment()) {
+        return reject("only sioyek://open?path=... is supported");
+    }
+
+    QUrlQuery query(url);
+    QStringList paths = query.allQueryItemValues("path", QUrl::FullyDecoded);
+    if (paths.size() != 1 || paths[0].isEmpty()) return reject("needs exactly one non-empty path parameter");
+
+    QString path = paths[0];
+    if (path.contains(QChar(0))) return reject("path contains a NUL character");
+    QString home = QDir::cleanPath(QDir::homePath());
+    if (path.startsWith("~/")) {
+        path = home + path.mid(1);
+    }
+    if (!QDir::isAbsolutePath(path)) return reject("path is not absolute");
+    if (path.split('/').contains("..")) return reject("path has a .. component");
+
+    QString clean_path = QDir::cleanPath(path);
+    if (!clean_path.startsWith(home + "/")) return reject("path is not under the home directory");
+    if (!clean_path.endsWith(".pdf", Qt::CaseInsensitive)) return reject("path does not end in .pdf");
+    QFileInfo info(clean_path);
+    if (!info.exists()) return reject("file does not exist");
+    if (!info.isFile()) return reject("not a regular file");
+
+    QStringList args;
+    args << QCoreApplication::applicationFilePath();
+
+    QStringList pages = query.allQueryItemValues("page", QUrl::FullyDecoded);
+    if (pages.size() == 1) {
+        bool ok = false;
+        int page = pages[0].toInt(&ok);
+        if (ok && page >= 1) {
+            // 1-based, like `sioyek --page N`
+            args << "--page" << QString::number(page);
+        }
+        else {
+            qWarning().noquote() << "sioyek: ignoring malformed page" << pages[0] << "in URL" << url.toString();
+        }
+    }
+    else if (pages.size() > 1) {
+        qWarning().noquote() << "sioyek: ignoring repeated page parameter in URL" << url.toString();
+    }
+
+    // `--` ends option parsing, so the path is always taken as the file
+    args << "--" << clean_path;
+    return args;
+}
+
+void handle_sioyek_url(const QUrl& url) {
+    std::optional<QStringList> args = sioyek_url_to_args(url);
+    if (!args) return;
+
+    MainWidget* target = handle_args(args.value());
+    if (target) {
+        focus_on_widget(target);
+    }
+    else if (windows.size() > 0) {
+        focus_on_widget(windows[0]);
+    }
+}
+#endif
+
 
 int main(int argc, char* args[]) {
 
@@ -941,6 +1017,16 @@ int main(int argc, char* args[]) {
     QObject::connect(&app, &OpenWithApplication::file_ready, [&main_widget](const QString& file_name) {
         handle_args(QStringList() << QCoreApplication::applicationFilePath() << file_name);
         });
+
+#ifdef NIGHT_P
+    // sioyek:// links (see docs/url-scheme.md); a cold launch may have queued one already
+    QObject::connect(&app, &OpenWithApplication::url_ready, [](const QUrl& url) {
+        handle_sioyek_url(url);
+        });
+    for (const QUrl& url : app.take_pending_urls()) {
+        handle_sioyek_url(url);
+    }
+#endif
 
     QCoreApplication::processEvents();
 
