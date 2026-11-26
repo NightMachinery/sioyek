@@ -99,6 +99,7 @@ HEADERS += pdf_viewer/book.h \
            pdf_viewer/path.h \
            pdf_viewer/utf8.h \
            pdf_viewer/utils.h \
+           pdf_viewer/org_copy.h \
            pdf_viewer/mysortfilterproxymodel.h \
            pdf_viewer/utf8/checked.h \
            pdf_viewer/utf8/core.h \
@@ -125,6 +126,7 @@ SOURCES += pdf_viewer/book.cpp \
            pdf_viewer/ui.cpp \
            pdf_viewer/path.cpp \
            pdf_viewer/utils.cpp \
+           pdf_viewer/org_copy.cpp \
            pdf_viewer/mysortfilterproxymodel.cpp \
            pdf_viewer/RunGuard.cpp \
            pdf_viewer/OpenWithApplication.cpp \

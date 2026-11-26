@@ -4248,6 +4248,20 @@ public:
 
 };
 
+class CopyAsOrgModeCommand : public Command {
+public:
+    static inline const std::string cname = "copy_as_org_mode";
+    static inline const std::string hname = "Copy as Org-mode";
+    CopyAsOrgModeCommand(MainWidget* w) : Command(cname, w) {};
+    void perform() {
+        std::wstring org_text = widget->get_selected_text_as_org_mode();
+        if (!org_text.empty()) {
+            copy_to_clipboard(org_text);
+        }
+    }
+
+};
+
 #ifdef Q_OS_MACOS
 class MacosLookupCommand : public Command {
 public:
@@ -7421,6 +7435,7 @@ CommandManager::CommandManager(ConfigManager* config_manager) {
     register_command<OpenDocumentEmbeddedCommand>();
     register_command<OpenDocumentEmbeddedFromCurrentPathCommand>();
     register_command<CopyCommand>();
+    register_command<CopyAsOrgModeCommand>();
 #ifdef Q_OS_MACOS
     register_command<MacosLookupCommand>();
 #endif

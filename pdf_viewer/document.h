@@ -25,6 +25,7 @@
 
 class CachedChecksummer;
 class DatabaseManager;
+struct OrgCopyConfig;
 
 class CharacterIterator {
     fz_stext_block* block = nullptr;
@@ -335,6 +336,14 @@ public:
         fz_document* doc = nullptr);
 
     std::wstring get_raw_text_selection(AbsoluteDocumentPos selection_begin, AbsoluteDocumentPos selection_end);
+    std::wstring get_org_mode_selection(
+        AbsoluteDocumentPos selection_begin,
+        AbsoluteDocumentPos selection_end,
+        bool is_word_selection,
+        bool is_line_selection,
+        float current_zoom,
+        bool is_presentation_mode,
+        const OrgCopyConfig& config);
 
     bool is_bookmark_new(const BookMark& bookmark);
     bool is_highlight_new(const Highlight& highlight);

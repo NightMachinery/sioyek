@@ -818,6 +818,7 @@ public:
     void handle_toggle_text_mark();
 
     const std::wstring& get_selected_text(bool insert_newlines=false);
+    std::wstring get_selected_text_as_org_mode();
     void move_selection_end(bool expand, bool word);
     void move_selection_begin(bool expand, bool word);
     void shrink_selection_end();

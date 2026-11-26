@@ -25,6 +25,8 @@
 #include "database.h"
 #include "utf8/checked.h"
 #include "utils.h"
+#include "org_copy.h"
+#include <qurl.h>
 
 extern bool SHOULD_RENDER_PDF_ANNOTATIONS;
 
@@ -2113,6 +2115,400 @@ void Document::get_text_selection(fz_context* ctx, AbsoluteDocumentPos selection
             }
         }
     }
+}
+
+namespace {
+
+bool starts_with_ci(const std::string& s, const char* prefix) {
+    size_t i = 0;
+    while (prefix[i] != '\0') {
+        if (i >= s.size() || std::tolower(static_cast<unsigned char>(s[i])) != std::tolower(static_cast<unsigned char>(prefix[i]))) {
+            return false;
+        }
+        i++;
+    }
+    return true;
+}
+
+bool ends_with_ci(const std::wstring& s, const wchar_t* suffix) {
+    size_t len = 0;
+    while (suffix[len] != L'\0') len++;
+    if (s.size() < len) return false;
+    size_t offset = s.size() - len;
+    for (size_t i = 0; i < len; i++) {
+        if (std::towlower(s[offset + i]) != std::towlower(suffix[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+int find_link_index_for_char(fz_stext_char* chr, const std::vector<PdfLink>& page_links) {
+    if (!chr || page_links.empty()) {
+        return -1;
+    }
+    PagelessDocumentRect charrect = fz_rect_from_quad(chr->quad);
+    float y = (charrect.y0 + charrect.y1) / 2.0f;
+    float x = (charrect.x0 + charrect.x1) / 2.0f;
+    float height = charrect.y1 - charrect.y0;
+    charrect.y0 = y - height / 5.0f;
+    charrect.y1 = y + height / 5.0f;
+    charrect.x0 = x;
+    charrect.x1 = x;
+
+    for (size_t i = 0; i < page_links.size(); i++) {
+        for (const auto& link_rect : page_links[i].rects) {
+            if (rects_intersect(charrect, link_rect)) {
+                return static_cast<int>(i);
+            }
+        }
+    }
+    return -1;
+}
+
+} // namespace
+
+std::wstring Document::get_org_mode_selection(
+    AbsoluteDocumentPos selection_begin,
+    AbsoluteDocumentPos selection_end,
+    bool is_word_selection,
+    bool is_line_selection,
+    float current_zoom,
+    bool is_presentation_mode,
+    const OrgCopyConfig& config) {
+
+    if (!doc) {
+        return L"";
+    }
+
+    std::vector<OrgStyledChar> org_chars;
+    std::vector<OrgLinkTarget> org_links;
+
+    auto resolve_pdf_link = [&](const PdfLink& link) -> OrgLinkTarget {
+        OrgLinkTarget target;
+        if (link.uri.empty()) {
+            return target;
+        }
+
+        if (starts_with_ci(link.uri, "http://") ||
+            starts_with_ci(link.uri, "https://") ||
+            starts_with_ci(link.uri, "mailto:") ||
+            starts_with_ci(link.uri, "ftp://")) {
+            target.kind = OrgLinkTarget::Kind::External;
+            target.raw_uri = utf8_decode(link.uri);
+            return target;
+        }
+
+        if (starts_with_ci(link.uri, "file:")) {
+            QString path_uri;
+            if (starts_with_ci(link.uri, "file://")) {
+                path_uri = QString::fromStdString(link.uri.substr(7));
+            } else {
+                path_uri = QString::fromStdString(link.uri.substr(5));
+            }
+            QStringList parts = path_uri.split('#');
+            QString decoded_path = QUrl::fromPercentEncoding(parts.at(0).toUtf8());
+            std::wstring path_part = decoded_path.toStdWString();
+            std::wstring resolved_path;
+            if (QFileInfo(decoded_path).isAbsolute()) {
+                resolved_path = QDir::cleanPath(decoded_path).toStdWString();
+            } else {
+                Path linked_file_path = Path(get_path()).file_parent().slash(path_part);
+                resolved_path = QDir::cleanPath(QString::fromStdWString(linked_file_path.get_path())).toStdWString();
+            }
+
+            int linked_page = 0;
+            if (parts.size() > 1 && parts.at(1).startsWith("page=", Qt::CaseInsensitive)) {
+                bool ok = false;
+                int p = parts.at(1).mid(5).toInt(&ok);
+                if (ok && p > 0) {
+                    linked_page = p;
+                }
+            }
+
+            target.file_path = resolved_path;
+            target.target_page_1based = linked_page;
+            target.whole_page = true;
+            if (ends_with_ci(resolved_path, L".pdf")) {
+                target.kind = OrgLinkTarget::Kind::FilePdf;
+            } else {
+                target.kind = OrgLinkTarget::Kind::FileOther;
+            }
+            return target;
+        }
+
+        if (fz_is_external_link(context, link.uri.c_str())) {
+            target.kind = OrgLinkTarget::Kind::External;
+            target.raw_uri = utf8_decode(link.uri);
+            return target;
+        }
+
+        fz_link_dest dest = fz_make_link_dest_none();
+        int target_page_0 = -1;
+        fz_try(context) {
+            dest = fz_resolve_link_dest(context, doc, link.uri.c_str());
+            target_page_0 = fz_page_number_from_location(context, doc, dest.loc);
+        }
+        fz_catch(context) {
+            target_page_0 = -1;
+        }
+
+        if (target_page_0 < 0 || target_page_0 >= num_pages()) {
+            return target;
+        }
+
+        float dest_y = std::isnan(dest.y) ? 0.0f : dest.y;
+        bool is_whole_page_dest =
+            dest.type == FZ_LINK_DEST_FIT ||
+            dest.type == FZ_LINK_DEST_FIT_B ||
+            dest.type == FZ_LINK_DEST_FIT_V ||
+            dest.type == FZ_LINK_DEST_FIT_BV;
+
+        if (dest.type == FZ_LINK_DEST_FIT_R) {
+            dest_y = std::isnan(dest.y) ? 0.0f : std::max(0.0f, dest.y);
+        } else if (dest.type != FZ_LINK_DEST_XYZ && dest.type != FZ_LINK_DEST_FIT_H && dest.type != FZ_LINK_DEST_FIT_BH && !is_whole_page_dest) {
+            if (!std::isnan(dest.h)) {
+                dest_y = dest_y + dest.h / 2.0f;
+            }
+        }
+
+        bool whole_page = is_presentation_mode || is_whole_page_dest || (dest_y <= 0.5f);
+
+        target.kind = OrgLinkTarget::Kind::Internal;
+        target.file_path = get_path();
+        target.target_page_1based = target_page_0 + 1;
+        target.target_x = get_page_width(target_page_0) / 2.0f;
+        target.target_y = dest_y;
+        target.whole_page = whole_page;
+        target.current_zoom = current_zoom;
+        return target;
+    };
+
+    auto append_char = [&](fz_stext_char* chr,
+                           int block_id,
+                           int line_id,
+                           const std::vector<PdfLink>& page_links,
+                           std::unordered_map<int, int>& page_link_map) {
+        OrgStyledChar sc;
+        sc.c = static_cast<wchar_t>(chr->c);
+        sc.bold = ((chr->flags & FZ_STEXT_BOLD) != 0) ||
+                  (chr->font != nullptr && fz_font_is_bold(context, chr->font) != 0);
+        sc.italic = (chr->font != nullptr && fz_font_is_italic(context, chr->font) != 0);
+        sc.monospace = (chr->font != nullptr && fz_font_is_monospaced(context, chr->font) != 0);
+        sc.strikeout = (chr->flags & FZ_STEXT_STRIKEOUT) != 0;
+        if (chr->font != nullptr) {
+            const char* fname = fz_font_name(context, chr->font);
+            if (fname != nullptr) {
+                sc.is_math_font = is_likely_math_font_name(fname);
+            }
+        }
+        sc.block_id = block_id;
+        sc.line_id = line_id;
+        sc.line_end = (chr->next == nullptr);
+
+        int page_link_idx = find_link_index_for_char(chr, page_links);
+        if (page_link_idx >= 0) {
+            auto it = page_link_map.find(page_link_idx);
+            if (it == page_link_map.end()) {
+                int new_id = static_cast<int>(org_links.size());
+                org_links.push_back(resolve_pdf_link(page_links[static_cast<size_t>(page_link_idx)]));
+                page_link_map[page_link_idx] = new_id;
+                sc.link_id = new_id;
+            } else {
+                sc.link_id = it->second;
+            }
+        }
+
+        org_chars.push_back(sc);
+    };
+
+    int next_block_id = 0;
+    int next_line_id = 0;
+
+    if (is_line_selection) {
+        DocumentPos begin_doc_pos = selection_begin.to_document(this);
+        DocumentPos end_doc_pos = selection_end.to_document(this);
+        if (begin_doc_pos.page == -1 || end_doc_pos.page == -1) {
+            return L"";
+        }
+
+        fz_point begin_fz_point = { begin_doc_pos.x, begin_doc_pos.y };
+        fz_point end_fz_point = { end_doc_pos.x, end_doc_pos.y };
+        fz_stext_page* begin_page = get_stext_with_page_number(begin_doc_pos.page);
+        fz_stext_page* end_page = get_stext_with_page_number(end_doc_pos.page);
+        if (!begin_page || !end_page) {
+            return L"";
+        }
+
+        int begin_index = 0, end_index = 0;
+        fz_stext_line* closest_line_to_begin = find_closest_line_to_document_point(begin_page, begin_fz_point, &begin_index);
+        fz_stext_line* closest_line_to_end = find_closest_line_to_document_point(end_page, end_fz_point, &end_index);
+        if (!closest_line_to_begin || !closest_line_to_end) {
+            return L"";
+        }
+
+        if (begin_doc_pos.page == end_doc_pos.page && begin_index > end_index) {
+            std::swap(closest_line_to_begin, closest_line_to_end);
+        } else if (begin_doc_pos.page > end_doc_pos.page) {
+            std::swap(closest_line_to_begin, closest_line_to_end);
+            std::swap(begin_doc_pos, end_doc_pos);
+        }
+
+        bool begun = false;
+        bool finished = false;
+        for (int page_number = begin_doc_pos.page; page_number <= end_doc_pos.page && !finished; page_number++) {
+            fz_stext_page* stext_page = get_stext_with_page_number(page_number);
+            if (!stext_page) continue;
+            const std::vector<PdfLink>& page_links = get_page_merged_pdf_links(page_number);
+            std::unordered_map<int, int> page_link_map;
+
+            LL_ITER(block, stext_page->first_block) {
+                if (block->type != FZ_STEXT_BLOCK_TEXT) continue;
+                int bid = next_block_id++;
+                LL_ITER(line, block->u.t.first_line) {
+                    int lid = next_line_id++;
+                    if (line == closest_line_to_begin) {
+                        begun = true;
+                    }
+                    if (begun) {
+                        for (fz_stext_char* chr = line->first_char; chr; chr = chr->next) {
+                            append_char(chr, bid, lid, page_links, page_link_map);
+                        }
+                    }
+                    if (line == closest_line_to_end) {
+                        finished = true;
+                        break;
+                    }
+                }
+                if (finished) break;
+            }
+        }
+        return serialize_selection_to_org(org_chars, org_links, config);
+    }
+
+    DocumentPos page_pos1 = absolute_to_page_pos_uncentered(selection_begin);
+    DocumentPos page_pos2 = absolute_to_page_pos_uncentered(selection_end);
+    int page_begin = page_pos1.page;
+    int page_end = page_pos2.page;
+    fz_point page_point1 = { page_pos1.x, page_pos1.y };
+    fz_point page_point2 = { page_pos2.x, page_pos2.y };
+
+    if (page_begin == -1 || page_end == -1) {
+        return L"";
+    }
+    if (page_end < page_begin) {
+        std::swap(page_begin, page_end);
+        std::swap(page_point1, page_point2);
+    }
+
+    bool word_selecting = false;
+    bool selecting = is_word_selection;
+    bool done_word_select = false;
+
+    for (int p = page_begin; p <= page_end && !done_word_select; p++) {
+        fz_stext_page* stext_page = get_stext_with_page_number(p);
+        if (!stext_page) continue;
+
+        struct CharLoc {
+            fz_stext_char* chr;
+            int block_id;
+            int line_id;
+        };
+        std::vector<fz_stext_char*> flat_chars;
+        std::vector<CharLoc> char_locs;
+
+        LL_ITER(block, stext_page->first_block) {
+            if (block->type != FZ_STEXT_BLOCK_TEXT) continue;
+            int bid = next_block_id++;
+            LL_ITER(line, block->u.t.first_line) {
+                int lid = next_line_id++;
+                LL_ITER(chr, line->first_char) {
+                    flat_chars.push_back(chr);
+                    char_locs.push_back({chr, bid, lid});
+                }
+            }
+        }
+
+        if (flat_chars.empty()) continue;
+
+        int location_index1 = 0, location_index2 = 0;
+        fz_stext_char* char_begin = nullptr;
+        fz_stext_char* char_end = nullptr;
+        if (p == page_begin) {
+            char_begin = find_closest_char_to_document_point(flat_chars, page_point1, &location_index1);
+        }
+        if (p == page_end) {
+            char_end = find_closest_char_to_document_point(flat_chars, page_point2, &location_index2);
+        }
+
+        const std::vector<PdfLink>& page_links = get_page_merged_pdf_links(p);
+        std::unordered_map<int, int> page_link_map;
+
+        if (char_begin == char_end && !is_word_selection && char_begin != nullptr) {
+            for (const auto& loc : char_locs) {
+                if (loc.chr == char_begin) {
+                    append_char(loc.chr, loc.block_id, loc.line_id, page_links, page_link_map);
+                    break;
+                }
+            }
+            return serialize_selection_to_org(org_chars, org_links, config);
+        }
+
+        if (char_begin == nullptr) char_begin = flat_chars.front();
+        if (char_end == nullptr) char_end = flat_chars.back();
+
+        while (char_begin->c == ' ' && char_begin->next != nullptr) {
+            char_begin = char_begin->next;
+        }
+        if (page_begin == page_end && location_index1 > location_index2) {
+            std::swap(char_begin, char_end);
+        }
+
+        for (const auto& loc : char_locs) {
+            fz_stext_char* current_char = loc.chr;
+            if (!is_word_selection) {
+                if (current_char == char_begin) {
+                    selecting = true;
+                }
+            } else {
+                if (!word_selecting && is_separator(char_begin, current_char)) {
+                    org_chars.clear();
+                    continue;
+                }
+                if (current_char == char_begin) {
+                    word_selecting = true;
+                }
+                if (current_char == char_end) {
+                    selecting = false;
+                }
+                if (word_selecting && is_separator(char_end, current_char) && !selecting) {
+                    word_selecting = false;
+                    done_word_select = true;
+                    break;
+                }
+            }
+
+            if (selecting || word_selecting) {
+                if (!(current_char->c == ' ' && org_chars.empty())) {
+                    append_char(current_char, loc.block_id, loc.line_id, page_links, page_link_map);
+                }
+                if (current_char->next == nullptr && is_word_selection && current_char->c != '-') {
+                    if (!word_selecting) {
+                        org_chars.clear();
+                    } else if (!selecting) {
+                        done_word_select = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!is_word_selection && current_char == char_end) {
+                selecting = false;
+            }
+        }
+    }
+
+    return serialize_selection_to_org(org_chars, org_links, config);
 }
 
 void Document::get_pdf_annotations(std::vector<BookMark>& pdf_bookmarks, std::vector<Highlight>& pdf_highlights, std::vector<FreehandDrawing>& pdf_drawings) {

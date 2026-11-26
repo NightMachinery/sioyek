@@ -25,6 +25,10 @@ float GAMMA = 1.0f;
 bool DEBUG_DISPLAY_FREEHAND_POINTS = false;
 bool DEBUG_SMOOTH_FREEHAND_DRAWINGS = true;
 bool ADD_NEWLINES_WHEN_COPYING_TEXT = false;
+bool ORG_COPY_PRESERVE_STYLES = true;
+bool ORG_COPY_INCLUDE_ZOOM = false;
+bool ORG_COPY_FALLBACK_TO_LOCATION = true;
+std::wstring ORG_LINK_PATH_ABBREVS = L"";
 bool ALWAYS_COPY_SELECTED_TEXT = false;
 bool SHOW_STATUSBAR_ONLY_WHEN_MOUSE_OVER = false;
 // seconds between periodic checkpoints of the session state (only written when it changed), <= 0 disables them
@@ -1053,6 +1057,9 @@ ConfigManager::ConfigManager(const Path& default_path, const Path& auto_path, co
     add_bool(L"allow_main_view_scroll_while_in_overview", &ALLOW_MAIN_VIEW_SCROLL_WHILE_IN_OVERVIEW);
     add_bool(L"background_pixel_fix", &BACKGROUND_PIXEL_FIX);
     add_bool(L"add_newlines_when_copying_text", &ADD_NEWLINES_WHEN_COPYING_TEXT);
+    add_bool(L"org_copy_preserve_styles", &ORG_COPY_PRESERVE_STYLES);
+    add_bool(L"org_copy_include_zoom", &ORG_COPY_INCLUDE_ZOOM);
+    add_bool(L"org_copy_fallback_to_location", &ORG_COPY_FALLBACK_TO_LOCATION);
     add_bool(L"always_copy_selected_text", &ALWAYS_COPY_SELECTED_TEXT);
     add_bool(L"show_statusbar_only_when_hovered", &SHOW_STATUSBAR_ONLY_WHEN_MOUSE_OVER);
     add_bool(L"scroll_past_document_ends", &SCROLL_PAST_DOCUMENT_ENDS);
@@ -1097,6 +1104,7 @@ ConfigManager::ConfigManager(const Path& default_path, const Path& auto_path, co
     add_string(L"right_status_bar_format", &RIGHT_STATUS_BAR_FORMAT);
     add_string(L"epub_css", &EPUB_CSS);
     add_string(L"tag_font_face", &TAG_FONT_FACE);
+    add_string(L"org_link_path_abbrevs", &ORG_LINK_PATH_ABBREVS);
     add_macro(L"startup_commands", &STARTUP_COMMANDS);
     add_macro(L"shift_click_command", &SHIFT_CLICK_COMMAND);
     add_macro(L"resize_command", &RESIZE_COMMAND);

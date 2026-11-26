@@ -77,6 +77,7 @@
 #include "database.h"
 #include "book.h"
 #include "utils.h"
+#include "org_copy.h"
 #include "ui.h"
 #include "pdf_renderer.h"
 #include "document.h"
@@ -253,6 +254,11 @@ extern std::wstring VISUAL_MARK_PREV_HOLD_COMMAND;
 extern bool AUTOMATICALLY_DOWNLOAD_MATCHING_PAPER_NAME;
 extern std::wstring TABLET_PEN_CLICK_COMMAND;
 extern std::wstring TABLET_PEN_DOUBLE_CLICK_COMMAND;
+extern bool ADD_NEWLINES_WHEN_COPYING_TEXT;
+extern bool ORG_COPY_PRESERVE_STYLES;
+extern bool ORG_COPY_INCLUDE_ZOOM;
+extern bool ORG_COPY_FALLBACK_TO_LOCATION;
+extern std::wstring ORG_LINK_PATH_ABBREVS;
 extern bool ALLOW_HORIZONTAL_DRAG_WHEN_DOCUMENT_IS_SMALL;
 extern float PAGE_SPACE_X;
 extern float PAGE_SPACE_Y;
@@ -8893,6 +8899,48 @@ const std::wstring& MainWidget::get_selected_text(bool insert_newlines) {
     }
 
     return selected_text;
+}
+
+std::wstring MainWidget::get_selected_text_as_org_mode() {
+    if (!main_document_view_has_document()) {
+        return L"";
+    }
+
+    std::wstring home_dir = QDir::homePath().toStdWString();
+    const std::wstring& plain_selected = get_selected_text();
+    if (plain_selected.empty()) {
+        if (!ORG_COPY_FALLBACK_TO_LOCATION) {
+            return L"";
+        }
+        DocumentPos docpos = main_document_view->get_offsets().to_document(doc());
+        int page_1based = get_current_page_number() + 1;
+        float zoom = main_document_view->get_zoom_level();
+        return format_sioyek_v1_link(
+            doc()->get_path(),
+            page_1based,
+            docpos.x,
+            docpos.y,
+            zoom,
+            home_dir,
+            ORG_LINK_PATH_ABBREVS);
+    }
+
+    OrgCopyConfig config;
+    config.preserve_styles = ORG_COPY_PRESERVE_STYLES;
+    config.include_zoom_in_internal_links = ORG_COPY_INCLUDE_ZOOM;
+    config.add_newlines = ADD_NEWLINES_WHEN_COPYING_TEXT;
+    config.fallback_to_current_location = ORG_COPY_FALLBACK_TO_LOCATION;
+    config.path_abbrevs = ORG_LINK_PATH_ABBREVS;
+    config.home_dir = home_dir;
+
+    return doc()->get_org_mode_selection(
+        selection_begin,
+        selection_end,
+        selection_mode == SelectionMode::Word,
+        selection_mode == SelectionMode::Line,
+        main_document_view->get_zoom_level(),
+        main_document_view->is_presentation_mode(),
+        config);
 }
 
 void MainWidget::expand_selection_vertical(bool begin, bool below) {
