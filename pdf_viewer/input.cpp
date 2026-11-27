@@ -4262,6 +4262,22 @@ public:
 
 };
 
+class CopyFilePathCommand : public Command {
+public:
+    static inline const std::string cname = "copy_file_path";
+    static inline const std::string hname = "Copy current file path";
+    CopyFilePathCommand(MainWidget* w) : Command(cname, w) {};
+    void perform() {
+        if (widget->main_document_view_has_document()) {
+            std::wstring path = widget->doc()->get_path();
+            if (!path.empty()) {
+                copy_to_clipboard(path);
+            }
+        }
+    }
+
+};
+
 #ifdef Q_OS_MACOS
 class MacosLookupCommand : public Command {
 public:
@@ -7436,6 +7452,7 @@ CommandManager::CommandManager(ConfigManager* config_manager) {
     register_command<OpenDocumentEmbeddedFromCurrentPathCommand>();
     register_command<CopyCommand>();
     register_command<CopyAsOrgModeCommand>();
+    register_command<CopyFilePathCommand>();
 #ifdef Q_OS_MACOS
     register_command<MacosLookupCommand>();
 #endif

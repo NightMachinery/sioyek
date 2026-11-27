@@ -76,3 +76,9 @@ Run the unit tests:
 ```
 tests/org-copy/run.sh
 ```
+
+## Related commands
+
+- `copy_file_path`: copies the full filesystem path of the currently open
+  document to the clipboard. Unbound by default in `pdf_viewer/keys.config`
+  (pairs naturally with `copy yy` and `copy_as_org_mode yo` as `copy_file_path yp`).
