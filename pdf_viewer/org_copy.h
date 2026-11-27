@@ -8,7 +8,7 @@ struct OrgCopyConfig {
     bool preserve_styles = true;
     bool include_zoom_in_internal_links = false;
     bool add_newlines = false;
-    bool fallback_to_current_location = true;
+    bool fallback_to_current_location = false;
     std::wstring path_abbrevs;
     std::wstring home_dir;
 };

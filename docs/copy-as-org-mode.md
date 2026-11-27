@@ -37,9 +37,10 @@ inline styling.
   Italic markup is suppressed for known math fonts (`CMMI`, `CMSY`, `Math`,
   `Symbol`, etc.) and isolated single-character tokens so inline equations stay
   readable.
-- **Empty selection (`org_copy_fallback_to_location`):** When nothing is
-  selected, `copy_as_org_mode` copies a `sioyek-v1:` link to the current view
-  location (`[[sioyek-v1:<path>::<page>:<x>:<y>:<zoom>]]`).
+- **Empty selection (`org_copy_fallback_to_location`):** By default (`0`),
+  invoking `copy_as_org_mode` with nothing selected is a no-op so the clipboard
+  is preserved. Set to `1` to fall back to copying a `sioyek-v1:` link to the
+  current view location (`[[sioyek-v1:<path>::<page>:<x>:<y>:<zoom>]]`).
 
 ## Configuration (`prefs_user.config`)
 
@@ -47,9 +48,9 @@ inline styling.
   and strikeout markers. Set to `0` for plain prose plus links.
 - `org_copy_include_zoom` (bool, default `0`): append `:<zoom>` to mid-page
   internal `sioyek-v1:` links using the window's current zoom level.
-- `org_copy_fallback_to_location` (bool, default `1`): copy a current-view
-  `sioyek-v1:` link when invoked with no selection. Set to `0` to make empty
-  selection a no-op.
+- `org_copy_fallback_to_location` (bool, default `0`): when `0`, empty
+  selection is a no-op that preserves the clipboard. Set to `1` to copy a
+  current-view `sioyek-v1:` link when invoked with no selection.
 - `org_link_path_abbrevs` (string, default empty): semicolon-separated
   `alias=prefix` rules for shortening paths in `sioyek-v1:` and `file:` links,
   for example `~nt=~/notes;~bk=/Volumes/books`. Leading `~` in prefixes expands
